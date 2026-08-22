@@ -23,6 +23,7 @@ body {
     padding: 20px 20px 48px 20px;
     height: 100vh;
     background: rgba(0, 0, 0, 0.45);
+    -webkit-backdrop-filter: blur(6px);
     backdrop-filter: blur(6px);
 }
 
@@ -95,17 +96,26 @@ body {
     font-weight: bold;
 }
 
-/* شبكة المحتوى الرئيسي */
+/* شبكة المحتوى الرئيسي (flex كخطة بديلة للمتصفحات القديمة مثل iOS 10) */
 .main-content-grid {
-    display: grid;
-    grid-template-columns: 350px 1fr;
+    display: flex;
     gap: 15px;
     flex: 1;
     overflow: hidden;
 }
 
+@supports (display: grid) {
+    .main-content-grid {
+        display: grid;
+        grid-template-columns: 350px 1fr;
+        gap: 15px;
+        grid-gap: 15px;
+    }
+}
+
 .card {
     background: rgba(255, 255, 255, 0.15);
+    -webkit-backdrop-filter: blur(10px);
     backdrop-filter: blur(10px);
     border-radius: 16px;
     padding: 15px;
@@ -177,9 +187,18 @@ body {
 }
 
 .special-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
+    display: flex;
+    flex-wrap: wrap;
     gap: 15px;
+}
+
+@supports (display: grid) {
+    .special-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 15px;
+        grid-gap: 15px;
+    }
 }
 
 .special-section {
@@ -316,4 +335,45 @@ body {
   border-color: #ff9800;
   color: #111;
   font-weight: bold;
+}
+
+/* ==========================================
+   دعم الأجهزة: آيباد، جوال، لابتوب، شاشات ذكية
+   ========================================== */
+
+/* توزيع احتياطي بالـ flex للمتصفحات التي لا تدعم Grid */
+.main-content-grid > .tasks-card { flex: 0 0 350px; min-width: 0; }
+.main-content-grid > .custom-image-card { flex: 1 1 auto; min-width: 0; }
+
+.special-section { flex: 1 1 calc(50% - 20px); min-width: 250px; }
+@supports (display: grid) {
+    .special-section { flex: initial; }
+}
+
+/* شاشات كبيرة وسمارت TV */
+@media (min-width: 1700px) {
+    html { font-size: 19px; }
+}
+
+/* آيباد والأجهزة اللوحية */
+@media (max-width: 1100px) {
+    .main-content-grid { grid-template-columns: 280px 1fr; }
+    .main-content-grid > .tasks-card { flex-basis: 280px; }
+}
+
+/* الجوال */
+@media (max-width: 760px) {
+    body { overflow-y: auto; height: auto; }
+    .dashboard { height: auto; min-height: 100vh; padding-bottom: 70px; }
+    .top-bar-area { flex-wrap: wrap; justify-content: center; gap: 10px; max-height: none; }
+    .main-content-grid { display: flex !important; flex-direction: column; }
+    .main-content-grid > .tasks-card { flex: none; }
+    .custom-image-view { min-height: 240px; }
+    .special-grid { flex-direction: column; }
+    .special-section { flex: 1 1 auto; }
+    .special-modal-content { width: 96%; max-height: 92vh; }
+    .modal-content { width: 94%; }
+    .digital-clock { font-size: 1.7rem; }
+    .idle-time { font-size: 3rem; }
+    .copyright-footer { font-size: 11px; }
 }
