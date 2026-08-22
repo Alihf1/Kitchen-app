@@ -1,5 +1,5 @@
 // ==========================================
-// 1. إعدادات Firebase للمزامنة اللحظية
+// إعدادات Firebase والمزامنة الأساسية
 // ==========================================
 const firebaseConfig = {
     apiKey: "AIzaSyA3rk_p6qGDXfnfAUENYSYyXh_F1kslAoM",
@@ -8,8 +8,7 @@ const firebaseConfig = {
     projectId: "kitchen-app-dab1a",
     storageBucket: "kitchen-app-dab1a.firebasestorage.app",
     messagingSenderId: "147018657287",
-    appId: "1:147018657287:web:1ed324d0f7e5eb098a44a2",
-    measurementId: "G-2H5F9GO7YV"
+    appId: "1:147018657287:web:1ed324d0f7e5eb098a44a2"
 };
 
 if (typeof firebase !== 'undefined' && !firebase.apps.length) {
@@ -19,107 +18,141 @@ if (typeof firebase !== 'undefined' && !firebase.apps.length) {
 const db = (typeof firebase !== 'undefined') ? firebase.database() : null;
 const timersRef = db ? db.ref('timers') : null;
 const tasksRef = db ? db.ref('tasks') : null;
-const shoppingRef = db ? db.ref('shopping') : null;
+const settingsRef = db ? db.ref('settings') : null;
+const audioPlayerRef = db ? db.ref('audioPlayerState') : null;
+const idleModeRef = db ? db.ref('idleModeState') : null;
 
-// ==========================================
-// 2. المتغيرات العامة وإعدادات النظام
-// ==========================================
 let timeFormat = '24';
-let alarmDuration = 60; // بالثواني (الافتراضي دقيقة)
+let alarmDuration = 60;
+let showClock = true;
+let showWeather = true;
 
-// إدارات الأصوات والمشغل
-let audioPlaylist = []; // قائمة الأصوات [{ name: '...', url: '...' }]
+let audioPlaylist = [];
 let currentAudioIndex = -1;
-let mainAudioPlayer = new Audio(); // لاعب الصوتيات للموسيقى
+let mainAudioPlayer = new Audio();
 let isMainAudioPlaying = false;
 
-// إدارات أصوات المنبه لتفادي التداخل
 let alarmAudioPlayer = new Audio();
-let activeAlarmOscillator = null; 
-let activeAlarmAudioCtx = null;
-let alarmTimeoutId = null;
 
 let memoryImages = [
     'https://images.unsplash.com/photo-1556911220-e15b29be8c8f?w=1200',
     'https://images.unsplash.com/photo-1556910103-1c02745aae4d?w=1200'
 ];
 let currentMemoryIndex = 0;
+let imageRotationIntervalTime = 10000;
+let imageRotationTimer = null;
 let idleInterval = null;
 
-// ==========================================
-// 3. تهيئة التطبيق عند التحميل
-// ==========================================
-document.addEventListener('DOMContentLoaded', () => {
-    loadSavedSettings();
-    renderMemoryList();
-    renderSettingsAudioList();
-    renderPlaylistDropdown();
+let menuGraceTimer = null;
+const MENU_GRACE_MS = 4000;
 
-    // أحداث انتهاء تشغيل أغنية في المشغل
+document.addEventListener('DOMContentLoaded', () => {
+    initRealtimeSync();
+    updateMainCustomImage();
+    startImageRotation();
+
     mainAudioPlayer.onended = () => {
         isMainAudioPlaying = false;
         updateAudioIcons(false);
+        if (audioPlayerRef) audioPlayerRef.update({ isPlaying: false });
     };
+
+    setupHoverClose();
 });
 
-function loadSavedSettings() {
-    // 1. الخلفية
-    const bgType = localStorage.getItem('kitchen_bg_type');
-    const bgVal = localStorage.getItem('kitchen_bg_val');
-    if (bgType && bgVal) {
-        if (bgType === 'color') changeBgColor(bgVal, false);
-        else setPresetBg(bgVal, false);
-    }
+function initRealtimeSync() {
+    if (!db) return;
 
-    // 2. صيغة الوقت
-    const savedFormat = localStorage.getItem('kitchen_time_format');
-    if (savedFormat) {
-        timeFormat = savedFormat;
-        const selectEl = document.getElementById('timeFormatSelect');
-        if (selectEl) selectEl.value = savedFormat;
-    }
+    settingsRef.on('value', (snapshot) => {
+        const settings = snapshot.val();
+        if (!settings) return;
 
-    // 3. مدة الرنين
-    const savedDuration = localStorage.getItem('kitchen_alarm_duration');
-    if (savedDuration) {
-        alarmDuration = parseInt(savedDuration);
-        if (alarmDuration > 600) alarmDuration = 600;
-        const inputEl = document.getElementById('alarmDurationInput');
-        if (inputEl) {
-            const m = String(Math.floor(alarmDuration / 60)).padStart(2, '0');
-            const s = String(alarmDuration % 60).padStart(2, '0');
-            inputEl.value = `${m}:${s}`;
+        if (settings.bgType && settings.bgVal) {
+            if (settings.bgType === 'color') changeBgColorUI(settings.bgVal);
+            else setPresetBgUI(settings.bgVal);
         }
-    }
 
-    // 4. صور الذكريات
-    const savedMemories = localStorage.getItem('kitchen_memories');
-    if (savedMemories) {
-        try {
-            const parsed = JSON.parse(savedMemories);
-            if (Array.isArray(parsed) && parsed.length > 0) memoryImages = parsed;
-        } catch (e) { }
-    }
+        if (settings.timeFormat) {
+            timeFormat = settings.timeFormat;
+            const selectEl = document.getElementById('timeFormatSelect');
+            if (selectEl) selectEl.value = settings.timeFormat;
+            updateClock();
+        }
 
-    // 5. الأصوات المخصصة
-    const savedAudioList = localStorage.getItem('kitchen_audio_playlist');
-    if (savedAudioList) {
-        try {
-            audioPlaylist = JSON.parse(savedAudioList);
-            if (audioPlaylist.length > 0) {
-                currentAudioIndex = 0;
-                updateAudioLabel(audioPlaylist[0].name);
+        if (settings.imageInterval) {
+            imageRotationIntervalTime = parseInt(settings.imageInterval);
+            const intervalSelect = document.getElementById('imageRotateIntervalSelect');
+            if (intervalSelect) intervalSelect.value = imageRotationIntervalTime;
+            startImageRotation();
+        }
+
+        if (settings.showClock !== undefined) {
+            showClock = settings.showClock;
+            applyVisibility('clockWidget', 'toggleClockBtn', showClock);
+        }
+        if (settings.showWeather !== undefined) {
+            showWeather = settings.showWeather;
+            applyVisibility('weatherWidget', 'toggleWeatherBtn', showWeather);
+        }
+
+        if (settings.alarmDuration) {
+            alarmDuration = parseInt(settings.alarmDuration);
+        }
+
+        if (settings.memories && Array.isArray(settings.memories)) {
+            memoryImages = settings.memories;
+            renderMemoryList();
+            updateMainCustomImage();
+        }
+
+        if (settings.playlist && Array.isArray(settings.playlist)) {
+            audioPlaylist = settings.playlist;
+            renderSettingsAudioList();
+            renderPlaylistDropdown();
+        }
+
+        if (settings.city) {
+            getWeatherByCityName(settings.city);
+        }
+    });
+
+    audioPlayerRef.on('value', (snapshot) => {
+        const state = snapshot.val();
+        if (!state) return;
+
+        if (typeof state.currentIndex === 'number' && state.currentIndex !== currentAudioIndex) {
+            currentAudioIndex = state.currentIndex;
+            if (audioPlaylist[currentAudioIndex]) {
+                updateAudioLabel(audioPlaylist[currentAudioIndex].name);
+                mainAudioPlayer.src = audioPlaylist[currentAudioIndex].url;
             }
-        } catch(e){}
-    }
+            renderPlaylistDropdown();
+        }
 
-    // 6. الطقس والموقع
-    const savedCity = localStorage.getItem('kitchen_city');
-    if (savedCity) {
-        getWeatherByCityName(savedCity);
-    } else {
-        getLocationGeo();
-    }
+        if (state.isPlaying !== undefined && state.isPlaying !== isMainAudioPlaying) {
+            isMainAudioPlaying = state.isPlaying;
+            updateAudioIcons(isMainAudioPlaying);
+            if (isMainAudioPlaying) {
+                if (audioPlaylist[currentAudioIndex] && mainAudioPlayer.src !== audioPlaylist[currentAudioIndex].url) {
+                    mainAudioPlayer.src = audioPlaylist[currentAudioIndex].url;
+                }
+                mainAudioPlayer.play().catch(() => {});
+            } else {
+                mainAudioPlayer.pause();
+            }
+        }
+    });
+
+    idleModeRef.on('value', (snapshot) => {
+        const state = snapshot.val();
+        if (!state) return;
+        if (state.active) triggerIdleModeUI();
+        else wakeUpUI();
+    });
+
+    settingsRef.child('city').once('value', (snap) => {
+        if (!snap.val()) getLocationGeo();
+    });
 }
 
 function showNotification(text) {
@@ -131,93 +164,180 @@ function showNotification(text) {
     }
 }
 
-// ==========================================
-// 4. التحكم بالخلفية
-// ==========================================
-function setPresetBg(url, notify = true) {
-    document.body.style.backgroundImage = `url('${url}')`;
-    document.body.style.backgroundColor = 'transparent';
-    localStorage.setItem('kitchen_bg_type', 'image');
-    localStorage.setItem('kitchen_bg_val', url);
-    if (notify) showNotification('تم تغيير الخلفية بنجاح');
+// التحكم بالإظهار والإخفاء (الساعة والطقس)
+function toggleClockVisibility() {
+    showClock = !showClock;
+    if (settingsRef) settingsRef.update({ showClock: showClock });
 }
 
+function toggleWeatherVisibility() {
+    showWeather = !showWeather;
+    if (settingsRef) settingsRef.update({ showWeather: showWeather });
+}
+
+function applyVisibility(elementId, buttonId, isVisible) {
+    const el = document.getElementById(elementId);
+    const btn = document.getElementById(buttonId);
+    if (el) el.style.display = isVisible ? 'flex' : 'none';
+    if (btn) {
+        btn.innerText = isVisible ? 'إخفاء' : 'إظهار';
+        btn.classList.toggle('off', !isVisible);
+    }
+}
+
+// إغلاق القوائم عند ابتعاد الماوس عنها
+function setupHoverClose() {
+    const specialContent = document.getElementById('specialMenuContent');
+    const settingsContent = document.getElementById('settingsModalContent');
+
+    if (specialContent) {
+        specialContent.addEventListener('mouseenter', cancelMenuGraceTimer);
+        specialContent.addEventListener('mouseleave', closeSpecialMenu);
+    }
+    if (settingsContent) {
+        settingsContent.addEventListener('mouseenter', cancelMenuGraceTimer);
+        settingsContent.addEventListener('mouseleave', closeSettings);
+    }
+
+    const playlistDropdown = document.getElementById('playlistDropdown');
+    if (playlistDropdown) {
+        playlistDropdown.addEventListener('mouseleave', () => playlistDropdown.classList.add('hidden'));
+    }
+}
+
+// إذا فُتحت النافذة ولم يدخلها الماوس، تُغلق تلقائياً بعد 4 ثوانٍ
+function armMenuGraceTimer() {
+    cancelMenuGraceTimer();
+    menuGraceTimer = setTimeout(() => {
+        closeSpecialMenu();
+        closeSettings();
+    }, MENU_GRACE_MS);
+}
+
+function cancelMenuGraceTimer() {
+    if (menuGraceTimer) {
+        clearTimeout(menuGraceTimer);
+        menuGraceTimer = null;
+    }
+}
+
+function toggleSpecialMenu() {
+    const modal = document.getElementById('specialMenuModal');
+    if (!modal) return;
+        modal.classList.toggle('hidden');
+    if (!modal.classList.contains('hidden')) armMenuGraceTimer();
+    else cancelMenuGraceTimer();
+}
+
+function openSettings() { 
+    const modal = document.getElementById('settingsModal');
+    if (!modal) return;
+    modal.style.display = 'flex';
+    armMenuGraceTimer();
+}
+
+function closeSettings() { 
+        const modal = document.getElementById('settingsModal');
+        if (modal) modal.style.display = 'none';
+    cancelMenuGraceTimer();
+}
+
+function closeSpecialMenu() {
+    const modal = document.getElementById('specialMenuModal');
+    if (modal) modal.classList.add('hidden');
+    cancelMenuGraceTimer();
+}
+
+function closeSpecialMenuOnBackdrop(e) {
+    if (e.target.id === 'specialMenuModal') toggleSpecialMenu();
+}
+
+function closeSettingsOnBackdrop(e) {
+    if (e.target.id === 'settingsModal') closeSettings();
+}
+
+// تبديل سرعة دوران الصورة المخصصة
+function changeImageInterval(val) {
+    imageRotationIntervalTime = parseInt(val);
+    if (settingsRef) settingsRef.update({ imageInterval: imageRotationIntervalTime });
+    startImageRotation();
+}
+
+function startImageRotation() {
+    if (imageRotationTimer) clearInterval(imageRotationTimer);
+    imageRotationTimer = setInterval(rotateMainCustomImage, imageRotationIntervalTime);
+}
+
+function rotateMainCustomImage() {
+    if (memoryImages.length > 0) {
+        currentMemoryIndex = (currentMemoryIndex + 1) % memoryImages.length;
+        updateMainCustomImage();
+    }
+}
+
+function updateMainCustomImage() {
+    const container = document.getElementById('mainCustomImageView');
+    if (!container) return;
+    if (memoryImages.length > 0) {
+        const imgUrl = memoryImages[currentMemoryIndex % memoryImages.length];
+        container.style.backgroundImage = `url('${imgUrl}')`;
+        container.style.backgroundSize = 'cover';
+        container.style.backgroundPosition = 'center';
+        container.innerHTML = '';
+    } else {
+        container.style.backgroundImage = 'none';
+        container.innerHTML = '<span>الصور الخاصة</span>';
+    }
+}
+
+// الخلفيات
+function setPresetBg(url) {
+    if (settingsRef) settingsRef.update({ bgType: 'image', bgVal: url });
+    showNotification('تم تغيير الخلفية');
+}
+function setPresetBgUI(url) {
+    document.body.style.backgroundImage = `url('${url}')`;
+    document.body.style.backgroundColor = 'transparent';
+}
 function uploadLocalBg(event) {
     const file = event.target.files[0];
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = function (e) { setPresetBg(e.target.result, true); };
+    reader.onload = function (e) { setPresetBg(e.target.result); };
     reader.readAsDataURL(file);
 }
-
-function changeBgColor(color, notify = true) {
+function changeBgColor(color) {
+    if (settingsRef) settingsRef.update({ bgType: 'color', bgVal: color });
+}
+function changeBgColorUI(color) {
     document.body.style.backgroundImage = 'none';
     document.body.style.backgroundColor = color;
-    localStorage.setItem('kitchen_bg_type', 'color');
-    localStorage.setItem('kitchen_bg_val', color);
-    if (notify) showNotification('تم تغيير لون الخلفية بنجاح');
 }
 
-// ==========================================
-// 5. نظام الصوتيات والمشغل المطور
-// ==========================================
-
-// رفع ملفات صوتية متعددة في وقت واحد
+// حل مشكلة إضافة وحذف المقاطع الصوتية
 function uploadMultipleAudioFiles(event) {
     const files = event.target.files;
     if (!files || files.length === 0) return;
-
     let loadedCount = 0;
     Array.from(files).forEach(file => {
         const reader = new FileReader();
         reader.onload = function (e) {
-            audioPlaylist.push({
-                name: file.name.replace(/\.[^/.]+$/, ""),
-                url: e.target.result
-            });
+            audioPlaylist.push({ name: file.name.replace(/\.[^/.]+$/, ""), url: e.target.result });
             loadedCount++;
             if (loadedCount === files.length) {
                 if (currentAudioIndex === -1) currentAudioIndex = 0;
-                renderSettingsAudioList();
-                renderPlaylistDropdown();
-                showNotification(`تم إدراج ${files.length} ملفات صوتية بنجاح`);
+                if (settingsRef) settingsRef.update({ playlist: audioPlaylist });
+                showNotification('تم إضافة الصوت بنجاح');
             }
         };
         reader.readAsDataURL(file);
     });
 }
 
-function saveAudioUrlSetting() {
-    const nameInp = document.getElementById('audioNameInput');
-    const urlInp = document.getElementById('audioUrlInput');
-    if (urlInp && urlInp.value.trim() !== '') {
-        const name = (nameInp && nameInp.value.trim()) ? nameInp.value.trim() : 'بث صوتي مباشر';
-        audioPlaylist.push({ name: name, url: urlInp.value.trim() });
-        if (currentAudioIndex === -1) currentAudioIndex = 0;
-        
-        urlInp.value = '';
-        if(nameInp) nameInp.value = '';
-        
-        renderSettingsAudioList();
-        renderPlaylistDropdown();
-        showNotification('تمت إضافة رابط الصوت القائمة');
-    }
-}
-
-// زر حفظ وتأكيد الأصوات
-function confirmAndSaveAudioList() {
-    localStorage.setItem('kitchen_audio_playlist', JSON.stringify(audioPlaylist));
-    showNotification(`تم حفظ ${audioPlaylist.length} صوت بنجاح في النظام`);
-}
-
 function renderSettingsAudioList() {
     const list = document.getElementById('settingsAudioList');
     if (!list) return;
     list.innerHTML = '';
-    if (audioPlaylist.length === 0) {
-        list.innerHTML = '<li style="color:#aaa;">لا يوجد أصوات مضافة</li>';
-        return;
-    }
     audioPlaylist.forEach((item, index) => {
         const li = document.createElement('li');
         li.innerHTML = `<span>${item.name}</span> <i class="fa-solid fa-trash" onclick="deleteAudioItem(${index})" style="color:#ff5252; cursor:pointer;"></i>`;
@@ -228,12 +348,10 @@ function renderSettingsAudioList() {
 function deleteAudioItem(index) {
     audioPlaylist.splice(index, 1);
     if (currentAudioIndex >= audioPlaylist.length) currentAudioIndex = audioPlaylist.length - 1;
-    renderSettingsAudioList();
-    renderPlaylistDropdown();
-    confirmAndSaveAudioList();
+    if (settingsRef) settingsRef.update({ playlist: audioPlaylist });
+    showNotification('تم حذف الصوت');
 }
 
-// عرض القائمة المنبثقة للاختيار
 function togglePlaylistMenu() {
     const dropdown = document.getElementById('playlistDropdown');
     if (dropdown) dropdown.classList.toggle('hidden');
@@ -243,12 +361,10 @@ function renderPlaylistDropdown() {
     const container = document.getElementById('playlistItems');
     if (!container) return;
     container.innerHTML = '';
-
     if (audioPlaylist.length === 0) {
-        container.innerHTML = '<li class="empty-msg">لا توجد أصوات مخصصة، أضف ملفات من الإعدادات</li>';
+        container.innerHTML = '<li class="empty-msg">لا توجد أصوات مضافة</li>';
         return;
     }
-
     audioPlaylist.forEach((item, idx) => {
         const li = document.createElement('li');
         li.className = (idx === currentAudioIndex) ? 'active' : '';
@@ -259,193 +375,106 @@ function renderPlaylistDropdown() {
 }
 
 function selectAudioTrack(index) {
-    if (index < 0 || index >= audioPlaylist.length) return;
     currentAudioIndex = index;
-    const track = audioPlaylist[index];
-    updateAudioLabel(track.name);
-    
-    // تشغيل مباشر بعد الاختيار
-    mainAudioPlayer.src = track.url;
-    mainAudioPlayer.play().then(() => {
-        isMainAudioPlaying = true;
-        updateAudioIcons(true);
-    }).catch(() => showNotification('تعذر تشغيل هذا المقطع'));
-
-    renderPlaylistDropdown();
+    if (audioPlayerRef) audioPlayerRef.update({ currentIndex: index, isPlaying: true });
     togglePlaylistMenu();
 }
 
 function updateAudioLabel(name) {
     const label = document.getElementById('audioTrackLabel');
-    const idleLabel = document.getElementById('idleTrackName');
     if (label) label.innerText = name;
-    if (idleLabel) idleLabel.innerText = name;
 }
 
-// التشغيل من زر التشغيل الجانبي دون فتح القائمة
 function toggleMainAudioPlay(event) {
-    if(event) event.stopPropagation();
-
+    if (event) event.stopPropagation();
     if (audioPlaylist.length === 0) {
-        showNotification('الرجاء إضافة أصوات من الإعدادات أولاً');
+        showNotification('أضف أصواتاً من الإعدادات أولاً');
         return;
     }
-
-    if (isMainAudioPlaying) {
-        mainAudioPlayer.pause();
-        isMainAudioPlaying = false;
-        updateAudioIcons(false);
-    } else {
-        if (currentAudioIndex === -1) currentAudioIndex = 0;
-        const track = audioPlaylist[currentAudioIndex];
-        
-        if (mainAudioPlayer.src !== track.url) {
-            mainAudioPlayer.src = track.url;
-        }
-
-        mainAudioPlayer.play().then(() => {
-            isMainAudioPlaying = true;
-            updateAudioIcons(true);
-            updateAudioLabel(track.name);
-        }).catch(() => showNotification('تعذر تشغيل الصوت'));
+    if (currentAudioIndex === -1) currentAudioIndex = 0;
+    if (audioPlayerRef) {
+        audioPlayerRef.update({ currentIndex: currentAudioIndex, isPlaying: !isMainAudioPlaying });
     }
 }
 
 function updateAudioIcons(playing) {
     const mainIcon = document.getElementById('audioIcon');
-    const idleIcon = document.getElementById('idleAudioIcon');
-    const iconClass = playing ? 'fa-pause' : 'fa-play';
-    if (mainIcon) mainIcon.className = `fa-solid ${iconClass}`;
-    if (idleIcon) idleIcon.className = `fa-solid ${iconClass}`;
+    if (mainIcon) mainIcon.className = `fa-solid ${playing ? 'fa-pause' : 'fa-play'}`;
 }
 
-// ==========================================
-// 6. إدارة المنبه والأصوات الافتراضية
-// ==========================================
+// حل مشكلة وقت المؤقت
+function showAddTimerInputs() {
+    document.getElementById('addTimerForm').classList.toggle('hidden');
+}
+
+function addNewTimer() {
+    const name = document.getElementById('newTimerName').value || 'مؤقت';
+    const hours = parseInt(document.getElementById('newTimerH').value) || 0;
+    const minutes = parseInt(document.getElementById('newTimerM').value) || 0;
+    const seconds = parseInt(document.getElementById('newTimerS').value) || 0;
+
+    const totalSeconds = (hours * 3600) + (minutes * 60) + seconds;
+
+    if (totalSeconds <= 0) {
+        showNotification('يرجى تحديد وقت أكبر من 0');
+        return;
+    }
+
+    if (timersRef) {
+        timersRef.push({ name: name, totalSec: totalSeconds, currentSec: totalSeconds, running: false });
+    }
+    showAddTimerInputs();
+}
 
 function stopAlarmSound() {
     if (alarmAudioPlayer) {
         alarmAudioPlayer.pause();
         alarmAudioPlayer.currentTime = 0;
     }
-    
-    if (activeAlarmOscillator) {
-        try { activeAlarmOscillator.stop(); } catch (e) {}
-        activeAlarmOscillator = null;
-    }
-    if (activeAlarmAudioCtx) {
-        try { activeAlarmAudioCtx.close(); } catch (e) {}
-        activeAlarmAudioCtx = null;
-    }
-    if (alarmTimeoutId) {
-        clearTimeout(alarmTimeoutId);
-        alarmTimeoutId = null;
-    }
-
-    const alarmModal = document.getElementById('alarmModal');
-    if (alarmModal) alarmModal.style.display = 'none';
+    const modal = document.getElementById('alarmModal');
+    if (modal) modal.style.display = 'none';
 }
 
-function startAlarmSound(timerName = 'مؤقت المطبخ', soundType = 'default_1') {
-    stopAlarmSound(); // إيقاف أي منبه يعمل مسبقاً
-
+function startAlarmSound(timerName = 'مؤقت', soundType = 'default_1') {
     const modal = document.getElementById('alarmModal');
     const modalText = document.getElementById('alarmModalText');
     if (modal) {
         if (modalText) modalText.innerText = timerName;
         modal.style.display = 'flex';
     }
-
-    // خيارات تشغيل الصوت
     if (soundType === 'custom' && audioPlaylist.length > 0) {
-        // تشغيل أول صوت مخصص أو الصوت الحالي
-        const targetUrl = audioPlaylist[currentAudioIndex > -1 ? currentAudioIndex : 0].url;
-        alarmAudioPlayer.src = targetUrl;
-        alarmAudioPlayer.play().catch(() => playSyntheticBeep(soundType));
-    } else {
-        playSyntheticBeep(soundType);
+        alarmAudioPlayer.src = audioPlaylist[0].url;
+        alarmAudioPlayer.play().catch(() => {});
     }
-
-    // توقيت الإيقاف التلقائي حسب المدة المحددة
-    alarmTimeoutId = setTimeout(() => {
-        stopAlarmSound();
-    }, alarmDuration * 1000);
-}
-
-// توليد أصوات افتراضية متعددة
-function playSyntheticBeep(type) {
-    try {
-        activeAlarmAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
-        activeAlarmOscillator = activeAlarmAudioCtx.createOscillator();
-        const gain = activeAlarmAudioCtx.createGain();
-
-        activeAlarmOscillator.connect(gain);
-        gain.connect(activeAlarmAudioCtx.destination);
-
-        if (type === 'default_2') { // نغمة هادئة
-            activeAlarmOscillator.type = 'triangle';
-            activeAlarmOscillator.frequency.value = 440;
-        } else if (type === 'default_3') { // جرس إلكتروني
-            activeAlarmOscillator.type = 'sawtooth';
-            activeAlarmOscillator.frequency.value = 600;
-        } else { // تنبيه كلاسيكي
-            activeAlarmOscillator.type = 'sine';
-            activeAlarmOscillator.frequency.value = 880;
-        }
-
-        activeAlarmOscillator.start();
-    } catch (e) {}
 }
 
 function saveAlarmDuration() {
-    const durationInput = document.getElementById('alarmDurationInput');
-    if (durationInput && durationInput.value) {
-        const parts = durationInput.value.split(':');
-        let seconds = (parseInt(parts[0]) * 60) + parseInt(parts[1]);
-
-        if (seconds > 600) {
-            seconds = 600;
-            durationInput.value = "10:00";
-            showNotification('الحد الأقصى المسموح به هو 10 دقائق فقط');
-        } else if (seconds <= 0) {
-            seconds = 1;
-            durationInput.value = "00:01";
-        } else {
-            showNotification('تم حفظ مدة المنبه بنجاح');
-        }
-
-        alarmDuration = seconds;
-        localStorage.setItem('kitchen_alarm_duration', alarmDuration);
-    }
+    showNotification('تم الحفظ');
 }
 
-// ==========================================
-// 7. الطقس والموقع الجغرافي
-// ==========================================
+// خدمة الطقس والموقع
 function getLocationGeo() {
+    showNotification('جاري تحديد موقعك الحالي...');
     if (navigator.geolocation) {
-        showNotification('جاري تحديد الموقع تلقائياً...');
-        navigator.geolocation.getCurrentPosition(
-            (pos) => {
-                fetchWeatherByCoords(pos.coords.latitude, pos.coords.longitude, 'موقعك الحالي');
-                localStorage.removeItem('kitchen_city');
-            },
-            () => {
-                showNotification('تعذر الجلب التلقائي، تم الاعتماد على الرياض');
-                getWeatherByCityName('الرياض');
-            }
-        );
+        navigator.geolocation.getCurrentPosition((pos) => {
+            fetchWeatherByCoords(pos.coords.latitude, pos.coords.longitude, 'موقعك الحالي');
+            showNotification('تم تحديث الطقس بناءً على موقع الجهاز');
+        }, () => {
+            showNotification('عذراً، متعذر الوصول للموقع. تم اختيار الرياض كافتراضي');
+            setManualCityName('الرياض');
+        });
+    } else {
+        showNotification('متصفحك لا يدعم خدمة الموقع');
     }
 }
 
 function setManualCity() {
     const cityInput = document.getElementById('manualCityInput');
-    if (cityInput && cityInput.value.trim() !== '') {
-        const city = cityInput.value.trim();
-        localStorage.setItem('kitchen_city', city);
-        getWeatherByCityName(city);
-        showNotification(`تم تعيين المدينة: ${city}`);
-    }
+    if (cityInput && cityInput.value.trim() !== '') setManualCityName(cityInput.value.trim());
+}
+
+function setManualCityName(cityName) {
+    if (settingsRef) settingsRef.update({ city: cityName });
 }
 
 function getWeatherByCityName(cityName) {
@@ -455,10 +484,8 @@ function getWeatherByCityName(cityName) {
             if (data.results && data.results.length > 0) {
                 const { latitude, longitude, name } = data.results[0];
                 fetchWeatherByCoords(latitude, longitude, name);
-            } else {
-                showNotification('لم يتم العثور على المدينة');
             }
-        }).catch(() => {});
+        });
 }
 
 function fetchWeatherByCoords(lat, lon, locationName) {
@@ -471,77 +498,51 @@ function fetchWeatherByCoords(lat, lon, locationName) {
                 if (tempEl) tempEl.innerText = `${Math.round(data.current_weather.temperature)}°C`;
                 if (locEl) locEl.innerText = locationName;
             }
-        }).catch(() => {});
+        });
 }
 
-// ==========================================
-// 8. الساعة والوقت والتاريخ
-// ==========================================
+// الوقت
 function changeTimeFormat(format) {
     timeFormat = format;
-    localStorage.setItem('kitchen_time_format', format);
-    updateClock();
-    showNotification(`تم التحويل إلى توقيت ${format} ساعة`);
+    if (settingsRef) settingsRef.update({ timeFormat: format });
 }
 
 function updateClock() {
     const now = new Date();
     let hours = now.getHours();
     const minutes = String(now.getMinutes()).padStart(2, '0');
-    let timeStr = '';
-
-    if (timeFormat === '12') {
-        const periodText = hours >= 12 ? 'م' : 'ص';
-        hours = hours % 12 || 12;
-        timeStr = `${String(hours).padStart(2, '0')}:${minutes} ${periodText}`;
-    } else {
-        timeStr = `${String(hours).padStart(2, '0')}:${minutes}`;
-    }
-
-    const digitalEl = document.getElementById('digitalClock');
-    const idleTimeEl = document.getElementById('idleTime');
+    let timeStr = timeFormat === '12' ? `${hours % 12 || 12}:${minutes}` : `${String(hours).padStart(2, '0')}:${minutes}`;
+    
+    document.getElementById('digitalClock').innerText = timeStr;
+    const idleTime = document.getElementById('idleTime');
+    if (idleTime) idleTime.innerText = timeStr;
+    
     const dateEl = document.getElementById('dateDisplay');
-
-    if (digitalEl) digitalEl.innerText = timeStr;
-    if (idleTimeEl) idleTimeEl.innerText = timeStr;
-
-    if (dateEl) {
-        const options = { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' };
-        dateEl.innerText = now.toLocaleDateString('ar-SA', options);
-    }
-
-    const hDeg = (now.getHours() % 12) * 30 + now.getMinutes() * 0.5;
-    const mDeg = now.getMinutes() * 6;
-    const hourHand = document.getElementById('hourHand');
-    const minuteHand = document.getElementById('minuteHand');
-    if (hourHand) hourHand.style.transform = `rotate(${hDeg}deg)`;
-    if (minuteHand) minuteHand.style.transform = `rotate(${mDeg}deg)`;
+    if (dateEl) dateEl.innerText = now.toLocaleDateString('ar-SA');
 }
 setInterval(updateClock, 1000);
 updateClock();
 
-// ==========================================
-// 9. وضع الخمول والصور
-// ==========================================
+// صور الذكريات والخمول
 function triggerIdleMode() {
-    const idleScreen = document.getElementById('idleScreen');
-    if (!idleScreen) return;
-    idleScreen.style.display = 'block';
-    setTimeout(() => { idleScreen.style.opacity = '1'; }, 10);
-
+    if (idleModeRef) idleModeRef.update({ active: true });
+}
+function wakeUp() {
+    if (idleModeRef) idleModeRef.update({ active: false });
+}
+function triggerIdleModeUI() {
+    document.getElementById('idleScreen').style.display = 'block';
+    setTimeout(() => { document.getElementById('idleScreen').style.opacity = '1'; }, 10);
     changeSlideshowImage();
     if (idleInterval) clearInterval(idleInterval);
     idleInterval = setInterval(changeSlideshowImage, 5000);
 }
-
-function wakeUp() {
-    const idleScreen = document.getElementById('idleScreen');
-    if (!idleScreen) return;
-    idleScreen.style.opacity = '0';
-    setTimeout(() => { idleScreen.style.display = 'none'; }, 1000);
+function wakeUpUI() {
+    const idle = document.getElementById('idleScreen');
+    idle.style.opacity = '0';
+    setTimeout(() => { idle.style.display = 'none'; }, 1000);
     if (idleInterval) clearInterval(idleInterval);
 }
-
 function changeSlideshowImage() {
     const slideshow = document.getElementById('slideshow');
     if (slideshow && memoryImages.length > 0) {
@@ -549,53 +550,36 @@ function changeSlideshowImage() {
         currentMemoryIndex = (currentMemoryIndex + 1) % memoryImages.length;
     }
 }
-
 function uploadLocalMemoryImg(e) {
     const file = e.target.files[0];
     if (!file) return;
     const reader = new FileReader();
     reader.onload = function (evt) {
         memoryImages.push(evt.target.result);
-        localStorage.setItem('kitchen_memories', JSON.stringify(memoryImages));
-        renderMemoryList();
-        showNotification('تم إثراء الذكريات بصورة جديدة');
+        if (settingsRef) settingsRef.update({ memories: memoryImages });
+        updateMainCustomImage();
+        showNotification('تمت إضافة الصورة بنجاح');
     };
     reader.readAsDataURL(file);
 }
-
-function addMemoryImage() {
-    const input = document.getElementById('newMemoryImg');
-    if (input && input.value.trim() !== '') {
-        memoryImages.push(input.value.trim());
-        localStorage.setItem('kitchen_memories', JSON.stringify(memoryImages));
-        input.value = '';
-        renderMemoryList();
-        showNotification('تمت إضافة رابط الصورة');
-    }
-}
-
 function renderMemoryList() {
     const list = document.getElementById('memoryImageList');
     if (!list) return;
     list.innerHTML = '';
-    memoryImages.forEach((imgUrl, idx) => {
+    memoryImages.forEach((_, idx) => {
         const li = document.createElement('li');
         li.innerHTML = `<span>صورة #${idx + 1}</span> <i class="fa-solid fa-trash" onclick="deleteMemoryImg(${idx})" style="color:#ff5252; cursor:pointer;"></i>`;
         list.appendChild(li);
     });
 }
-
 function deleteMemoryImg(index) {
     memoryImages.splice(index, 1);
-    localStorage.setItem('kitchen_memories', JSON.stringify(memoryImages));
-    renderMemoryList();
+    if (settingsRef) settingsRef.update({ memories: memoryImages });
+    updateMainCustomImage();
 }
 
-// ==========================================
-// 10. المؤقتات (Firebase)
-// ==========================================
+// المؤقتات
 let timers = [];
-
 if (timersRef) {
     timersRef.on('value', (snapshot) => {
         const data = snapshot.val();
@@ -608,69 +592,33 @@ function renderTimers() {
     const container = document.getElementById('timersContainer');
     if (!container) return;
     container.innerHTML = '';
-
     timers.forEach(t => {
         const box = document.createElement('div');
         box.className = 'timer-box';
         box.innerHTML = `
             <i class="fa-solid fa-xmark delete-timer-btn" onclick="deleteTimer('${t.id}')"></i>
-            <span style="font-weight:bold; color:#ff9800; font-size:0.9rem;">${t.name}</span>
+            <span>${t.name}</span>
             <div class="timer-display">${formatTimerTime(t.currentSec)}</div>
-            <div class="timer-controls">
-                <button onclick="toggleTimer('${t.id}')"><i class="fa-solid ${t.running ? 'fa-pause' : 'fa-play'}"></i></button>
-                <button onclick="resetTimer('${t.id}')"><i class="fa-solid fa-rotate-right"></i></button>
-            </div>
+            <button onclick="toggleTimer('${t.id}')"><i class="fa-solid ${t.running ? 'fa-pause' : 'fa-play'}"></i></button>
         `;
         container.appendChild(box);
     });
 }
 
 function formatTimerTime(sec) {
-    const h = String(Math.floor(sec / 3600)).padStart(2, '0');
-    const m = String(Math.floor((sec % 3600) / 60)).padStart(2, '0');
-    const s = String(sec % 60).padStart(2, '0');
-    return h > 0 ? `${h}:${m}:${s}` : `${m}:${s}`;
-}
-
-function showAddTimerInputs() {
-    const form = document.getElementById('addTimerForm');
-    if (form) form.classList.toggle('hidden');
-}
-
-function addNewTimer() {
-    const nameInp = document.getElementById('newTimerName');
-    const hInp = document.getElementById('newTimerH');
-    const mInp = document.getElementById('newTimerM');
-    const sInp = document.getElementById('newTimerS');
-    const soundSelect = document.getElementById('newTimerSound');
-
-    const name = (nameInp && nameInp.value.trim()) || 'مؤقت';
-    const h = parseInt(hInp ? hInp.value : 0) || 0;
-    const m = parseInt(mInp ? mInp.value : 0) || 0;
-    const s = parseInt(sInp ? sInp.value : 0) || 0;
-    const sound = soundSelect ? soundSelect.value : 'default_1';
-
-    let total = (h * 3600) + (m * 60) + s;
-    if (total < 1) total = 1;
-
-    if (timersRef) {
-        timersRef.push({ name, totalSec: total, currentSec: total, running: false, sound: sound });
+    const h = Math.floor(sec / 3600);
+    const m = Math.floor((sec % 3600) / 60);
+    const s = sec % 60;
+    if (h > 0) {
+        return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
     }
-    showAddTimerInputs();
+    return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
 }
 
 function deleteTimer(id) { if (timersRef) timersRef.child(id).remove(); }
-
 function toggleTimer(id) {
     const t = timers.find(x => x.id === id);
-    if (!t || !timersRef) return;
-    timersRef.child(id).update({ running: !t.running });
-}
-
-function resetTimer(id) {
-    const t = timers.find(x => x.id === id);
-    if (!t || !timersRef) return;
-    timersRef.child(id).update({ currentSec: t.totalSec, running: false });
+    if (t && timersRef) timersRef.child(id).update({ running: !t.running });
 }
 
 setInterval(() => {
@@ -679,16 +627,14 @@ setInterval(() => {
             t.currentSec--;
             renderTimers();
             if (t.currentSec === 0) {
-                if (timersRef) timersRef.child(t.id).update({ currentSec: 0, running: false });
-                startAlarmSound(t.name, t.sound || 'default_1');
+                if (timersRef) timersRef.child(t.id).update({ running: false });
+                startAlarmSound(t.name);
             }
         }
     });
 }, 1000);
 
-// ==========================================
-// 11. قائمة التسوق والمهام الذكية
-// ==========================================
+// المهام
 if (tasksRef) {
     tasksRef.on('value', (snapshot) => {
         const data = snapshot.val() || {};
@@ -702,65 +648,88 @@ if (tasksRef) {
         });
     });
 }
-
-if (shoppingRef) {
-    shoppingRef.on('value', (snapshot) => {
-        const data = snapshot.val() || {};
-        const shoppingList = document.getElementById('shoppingList');
-        if (!shoppingList) return;
-        shoppingList.innerHTML = '';
-        Object.keys(data).forEach(key => {
-            const li = document.createElement('li');
-            li.innerHTML = `<span>${data[key].text}</span> <i class="fa-solid fa-trash" onclick="removeShoppingItem('${key}')" style="cursor:pointer; color:#ff5252;"></i>`;
-            shoppingList.appendChild(li);
-        });
-    });
-}
-
 function addItem() {
     const input = document.getElementById('taskInput');
-    if (!input) return;
-    const val = input.value.trim();
-    if (!val) return;
-
-    const shoppingKeywords = ['حليب', 'خبز', 'طماطم', 'شراء', 'زيت', 'سكر', 'شاي', 'لحم', 'دجاج'];
-    const isShopping = shoppingKeywords.some(kw => val.includes(kw));
-
-    if (isShopping && shoppingRef) {
-        shoppingRef.push({ text: val });
-    } else if (tasksRef) {
-        tasksRef.push({ text: val });
+    if (input && input.value.trim() !== '') {
+        if (tasksRef) tasksRef.push({ text: input.value.trim() });
+        input.value = '';
     }
-    input.value = '';
 }
-
 function removeTask(key) { if (tasksRef) tasksRef.child(key).remove(); }
-function removeShoppingItem(key) { if (shoppingRef) shoppingRef.child(key).remove(); }
 
 // ==========================================
-// 12. النوافذ المنبثقة
+// مساعد الوصفات بالذكاء الاصطناعي (Puter.js - مجاني بدون مفتاح)
 // ==========================================
-function openSettings() {
-    const modal = document.getElementById('settingsModal');
-    if (modal) modal.style.display = 'flex';
+async function callAI(prompt) {
+    if (typeof puter === 'undefined' || !puter.ai) throw new Error('ai-unavailable');
+    const response = await puter.ai.chat(prompt);
+    const text = extractAIText(response);
+    // بعض أخطاء Puter ترجع كنص ناجح بدل الاستثناء، نكتشفها ونحولها لاستثناء
+    if (!text || /ERROR|Cannot read|does not support|not authenticated|rate limit/i.test(text)) {
+        throw new Error('ai-error: ' + text);
+    }
+    return text;
 }
 
-function closeSettings() {
-    const modal = document.getElementById('settingsModal');
-    if (modal) modal.style.display = 'none';
+function extractAIText(res) {
+    if (!res) return '';
+    if (typeof res === 'string') return res;
+    if (res.message) {
+        const c = res.message.content;
+        if (typeof c === 'string') return c;
+        if (Array.isArray(c)) return c.map(part => part.text || '').join('\n');
+    }
+    if (typeof res.text === 'string') return res.text;
+    return String(res);
 }
 
-function generateRecipe() {
+async function generateRecipe() {
     const input = document.getElementById('ingredientsInput');
     const output = document.getElementById('recipeOutput');
-    if (input && output && input.value.trim() !== '') {
-        output.innerText = `وجبة اقتراح بناءً على (${input.value}):\nصينية خضار مشوية مع إضافة التوابل وزيت الزيتون وتدخل الفرن لمدة 25 دقيقة.`;
+    const ingredients = input ? input.value.trim() : '';
+
+    if (!ingredients) {
+        showNotification('أدخل المكونات أولاً');
+        return;
+    }
+
+    output.innerText = 'جاري توليد الوصفة، انتظر قليلاً...';
+    try {
+        const recipe = await callAI(
+            'أنت طاهٍ محترف. بناءً على المكونات المتوفرة التالية، اقترح وصفة عربية عملية ' +
+            '(يمكن افتراض توفر الملح والزيت والتوابل الأساسية). اكتب بالعربية: اسم الطبق، ' +
+            'وقت التحضير، المكونات الناقصة إن وجدت، ثم خطوات التحضير مرقمة وباختصار.\n\n' +
+            'المكونات المتوفرة: ' + ingredients
+        );
+        output.innerText = recipe || 'تعذر الحصول على وصفة، حاول مجدداً.';
+    } catch (err) {
+        output.innerText = 'خدمة الذكاء الاصطناعي غير متاحة الآن، تأكد من اتصال الإنترنت وحاول مجدداً.';
     }
 }
 
-function showSubstitutes() {
+async function showSubstitutes() {
+    const input = document.getElementById('ingredientsInput');
     const output = document.getElementById('recipeOutput');
-    if (output) {
-        output.innerText = "بدائل متوفرة:\n• الزبدة ⬅ زيت زيتون أو زيوت نباتية\n• الحليب ⬅ لبن أو زبادي مخفف بالماء\n• الليمون ⬅ خل أبيض";
+    const ingredients = input ? input.value.trim() : '';
+
+    if (!ingredients) {
+        showNotification('أدخل المكونات أولاً');
+        return;
+    }
+
+    output.innerText = 'جاري البحث عن البدائل...';
+    try {
+        const subs = await callAI(
+            'أنت طاهٍ محترف. لدي هذه المكونات: ' + ingredients + '\n' +
+            'اكتب بالعربية وباختصار: بدائل منزلية شائعة لأهم المكونات الناقصة في الوصفات، ' +
+            'ثم اقترح 3 أطباق سريعة يمكن تحضيرها بهذه المكونات.'
+        );
+        output.innerText = subs || 'تعذر الحصول على البدائل، حاول مجدداً.';
+    } catch (err) {
+        output.innerText = 'خدمة الذكاء الاصطناعي غير متاحة الآن، تأكد من اتصال الإنترنت وحاول مجدداً.';
     }
 }
+document.addEventListener("DOMContentLoaded", function () {
+  const currentYear = new Date().getFullYear();
+  document.getElementById("year").textContent = currentYear;
+});
