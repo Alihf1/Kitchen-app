@@ -44,7 +44,10 @@ let imageRotationTimer = null;
 let idleInterval = null;
 
 let menuGraceTimer = null;
-const MENU_GRACE_MS = 4000;
+let menusOpenedAt = 0;
+const OPEN_GUARD_MS = 450;
+const FALLBACK_CLOSE_MS = 6000;
+const MENU_ACTIVITY_EVENTS = ['click', 'input', 'keydown', 'touchstart'];
 
 document.addEventListener('DOMContentLoaded', () => {
     initRealtimeSync();
@@ -58,6 +61,7 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     setupHoverClose();
+    setupAutoHideControls();
 });
 
 function initRealtimeSync() {
@@ -185,19 +189,73 @@ function applyVisibility(elementId, buttonId, isVisible) {
     }
 }
 
-// إغلاق القوائم عند ابتعاد الماوس عنها
+// إخفاء أزرار التحكم (الإعدادات والقائمة المميزة) في الواجهة الرئيسية عند عدم الحركة
+let uiControlsTimer = null;
+const UI_HIDE_DELAY_MS = 3000;
+
+function setupAutoHideControls() {
+    const topActions = document.querySelector('.top-actions');
+    const dashboard = document.getElementById('dashboard');
+    if (!topActions || !dashboard) return;
+
+    // عند الإخفاء يتمدد المحتوى الرئيسي (المهام والصور) لملء الشاشة
+    const setIdle = (idle) => {
+        topActions.classList.toggle('controls-hidden', idle);
+        dashboard.classList.toggle('controls-idle', idle);
+    };
+
+    const scheduleHide = () => {
+        clearTimeout(uiControlsTimer);
+        uiControlsTimer = setTimeout(() => {
+            // لا نخفي الأزرار ما دامت إحدى النوافذ مفتوحة
+            const specialModal = document.getElementById('specialMenuModal');
+            const specialOpen = specialModal && !specialModal.classList.contains('hidden');
+            const settingsModal = document.getElementById('settingsModal');
+            const settingsOpen = settingsModal && settingsModal.style.display === 'flex';
+            if (!specialOpen && !settingsOpen) setIdle(true);
+        }, UI_HIDE_DELAY_MS);
+    };
+
+    const revealControls = () => {
+        setIdle(false);
+        scheduleHide();
+    };
+
+    document.addEventListener('mousemove', revealControls);
+    document.addEventListener('touchstart', revealControls);
+
+    scheduleHide();
+}
+
+// إغلاق القوائم بمجرد رجوع الماوس إلى الواجهة الرئيسية
 function setupHoverClose() {
+    const specialModal = document.getElementById('specialMenuModal');
     const specialContent = document.getElementById('specialMenuContent');
+    const settingsModal = document.getElementById('settingsModal');
     const settingsContent = document.getElementById('settingsModalContent');
 
+    // ما دام الماوس داخل النافذة تبقى مفتوحة، وفور خروجه تغلق
     if (specialContent) {
         specialContent.addEventListener('mouseenter', cancelMenuGraceTimer);
-        specialContent.addEventListener('mouseleave', closeSpecialMenu);
+        specialContent.addEventListener('mouseleave', closeAllMenus);
+        keepMenuOpenWhileActive(specialContent);
     }
     if (settingsContent) {
         settingsContent.addEventListener('mouseenter', cancelMenuGraceTimer);
-        settingsContent.addEventListener('mouseleave', closeSettings);
+        settingsContent.addEventListener('mouseleave', closeAllMenus);
+        keepMenuOpenWhileActive(settingsContent);
     }
+
+    // أي حركة ماوس خارج صندوق النافذة المفتوحة = المستخدم في الواجهة => إغلاق فوري
+    document.addEventListener('mousemove', (e) => {
+        const specialOpen = specialModal && !specialModal.classList.contains('hidden');
+        const settingsOpen = settingsModal && settingsModal.style.display === 'flex';
+        if (!specialOpen && !settingsOpen) return;
+        if (Date.now() - menusOpenedAt < OPEN_GUARD_MS) return;
+
+        if (specialOpen && !isPointerInside(specialContent, e)) { closeAllMenus(); return; }
+        if (settingsOpen && !isPointerInside(settingsContent, e)) closeAllMenus();
+    });
 
     const playlistDropdown = document.getElementById('playlistDropdown');
     if (playlistDropdown) {
@@ -205,13 +263,29 @@ function setupHoverClose() {
     }
 }
 
-// إذا فُتحت النافذة ولم يدخلها الماوس، تُغلق تلقائياً بعد 4 ثوانٍ
+// للمس والكتابة: كل تفاعل داخل النافذة يجدد مدة بقائها مفتوحة
+function keepMenuOpenWhileActive(contentEl) {
+    MENU_ACTIVITY_EVENTS.forEach(evt => {
+        contentEl.addEventListener(evt, () => {
+            cancelMenuGraceTimer();
+            if (!contentEl.matches(':hover')) {
+                menuGraceTimer = setTimeout(closeAllMenus, FALLBACK_CLOSE_MS);
+            }
+        });
+    });
+}
+
+function isPointerInside(el, e) {
+    if (!el) return false;
+    const r = el.getBoundingClientRect();
+    return e.clientX >= r.left && e.clientX <= r.right &&
+           e.clientY >= r.top && e.clientY <= r.bottom;
+}
+
+// احتياط: إذا فُتحت النافذة وبقيت دون أي تفاعل، تغلق تلقائياً
 function armMenuGraceTimer() {
     cancelMenuGraceTimer();
-    menuGraceTimer = setTimeout(() => {
-        closeSpecialMenu();
-        closeSettings();
-    }, MENU_GRACE_MS);
+    menuGraceTimer = setTimeout(closeAllMenus, FALLBACK_CLOSE_MS);
 }
 
 function cancelMenuGraceTimer() {
@@ -221,24 +295,36 @@ function cancelMenuGraceTimer() {
     }
 }
 
+function closeAllMenus() {
+    closeSpecialMenu();
+    closeSettings();
+    const dropdown = document.getElementById('playlistDropdown');
+    if (dropdown) dropdown.classList.add('hidden');
+}
+
 function toggleSpecialMenu() {
     const modal = document.getElementById('specialMenuModal');
     if (!modal) return;
-        modal.classList.toggle('hidden');
-    if (!modal.classList.contains('hidden')) armMenuGraceTimer();
-    else cancelMenuGraceTimer();
+    modal.classList.toggle('hidden');
+    if (!modal.classList.contains('hidden')) {
+        menusOpenedAt = Date.now();
+        armMenuGraceTimer();
+    } else {
+        cancelMenuGraceTimer();
+    }
 }
 
-function openSettings() { 
+function openSettings() {
     const modal = document.getElementById('settingsModal');
     if (!modal) return;
     modal.style.display = 'flex';
+    menusOpenedAt = Date.now();
     armMenuGraceTimer();
 }
 
-function closeSettings() { 
-        const modal = document.getElementById('settingsModal');
-        if (modal) modal.style.display = 'none';
+function closeSettings() {
+    const modal = document.getElementById('settingsModal');
+    if (modal) modal.style.display = 'none';
     cancelMenuGraceTimer();
 }
 
@@ -683,9 +769,13 @@ function extractAIText(res) {
     return String(res);
 }
 
-async function generateRecipe() {
+let lastSuggestedIngredients = '';
+
+// الخطوة 1: اقتراح أسماء أطباق حسب المكونات
+async function suggestDishes() {
     const input = document.getElementById('ingredientsInput');
     const output = document.getElementById('recipeOutput');
+    const box = document.getElementById('dishSuggestions');
     const ingredients = input ? input.value.trim() : '';
 
     if (!ingredients) {
@@ -693,15 +783,63 @@ async function generateRecipe() {
         return;
     }
 
-    output.innerText = 'جاري توليد الوصفة، انتظر قليلاً...';
+    lastSuggestedIngredients = ingredients;
+    output.innerText = 'جاري اقتراح الأطباق المناسبة لمكوناتك...';
+    if (box) box.classList.add('hidden');
+
+    try {
+        const raw = await callAI(
+            'أنت طاهٍ محترف. المستخدم يملك هذه المكونات: ' + ingredients + '\n' +
+            'اقترح له 5 أطباق شهية يمكن تحضيرها بها (مثال: مكرونة حمراء، كبسة دجاج، رز مندي). ' +
+            'اكتب أسماء الأطباق فقط، كل اسم في سطر منفصل، بدون أرقام أو رموز أو أي شرح إضافي.'
+        );
+        const dishes = parseDishNames(raw);
+        if (!dishes.length) throw new Error('empty');
+        renderDishSuggestions(dishes);
+        output.innerText = 'اختر طبقاً من الاقتراحات لعرض وصفته كاملة:';
+    } catch (err) {
+        output.innerText = 'خدمة الذكاء الاصطناعي غير متاحة الآن، تأكد من اتصال الإنترنت وحاول مجدداً.';
+    }
+}
+
+function parseDishNames(raw) {
+    return String(raw)
+        .split(/\n|،|,|\|/)
+        .map(s => s.replace(/^[\s\-–—*•.0-9]+[.)]?\s*/, '').trim())
+        .filter(s => s.length > 1 && s.length < 60)
+        .slice(0, 8);
+}
+
+// عرض الاقتراحات كأزرار قابلة للاختيار
+function renderDishSuggestions(dishes) {
+    const box = document.getElementById('dishSuggestions');
+    if (!box) return;
+    box.innerHTML = '';
+    dishes.forEach(name => {
+        const chip = document.createElement('span');
+        chip.className = 'dish-chip';
+        chip.innerText = name;
+        chip.onclick = () => selectDish(name, chip);
+        box.appendChild(chip);
+    });
+    box.classList.remove('hidden');
+}
+
+// الخطوة 2: عند اختيار الطبق تظهر الوصفة الكاملة
+async function selectDish(dishName, chipEl) {
+    const output = document.getElementById('recipeOutput');
+
+    document.querySelectorAll('.dish-chip.selected').forEach(c => c.classList.remove('selected'));
+    if (chipEl) chipEl.classList.add('selected');
+
+    output.innerText = 'جاري تجهيز وصفة «' + dishName + '» ...';
     try {
         const recipe = await callAI(
-            'أنت طاهٍ محترف. بناءً على المكونات المتوفرة التالية، اقترح وصفة عربية عملية ' +
-            '(يمكن افتراض توفر الملح والزيت والتوابل الأساسية). اكتب بالعربية: اسم الطبق، ' +
-            'وقت التحضير، المكونات الناقصة إن وجدت، ثم خطوات التحضير مرقمة وباختصار.\n\n' +
-            'المكونات المتوفرة: ' + ingredients
+            'أنت طاهٍ محترف. اكتب بالعربية وصفة عملية مفصلة للطبق التالي: «' + dishName + '»\n' +
+            'مع مراعاة أن المستخدم يملك هذه المكونات: ' + (lastSuggestedIngredients || 'غير محددة') + '\n' +
+            'الصيغة: اسم الطبق، وقت التحضير، المقادير كاملة، ثم خطوات التحضير مرقمة وباختصار.'
         );
-        output.innerText = recipe || 'تعذر الحصول على وصفة، حاول مجدداً.';
+        output.innerText = recipe || 'تعذر الحصول على الوصفة، حاول مجدداً.';
     } catch (err) {
         output.innerText = 'خدمة الذكاء الاصطناعي غير متاحة الآن، تأكد من اتصال الإنترنت وحاول مجدداً.';
     }
