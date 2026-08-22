@@ -22,6 +22,24 @@ const settingsRef = db ? db.ref('settings') : null;
 const audioPlayerRef = db ? db.ref('audioPlayerState') : null;
 const idleModeRef = db ? db.ref('idleModeState') : null;
 
+// توافق المتصفحات القديمة (iPad iOS 10): بديل بسيط عن fetch
+if (!window.fetch) {
+    window.fetch = function (url) {
+        return new Promise(function (resolve, reject) {
+            const xhr = new XMLHttpRequest();
+            xhr.open('GET', url, true);
+            xhr.onload = function () {
+                resolve({
+                    ok: xhr.status >= 200 && xhr.status < 300,
+                    json: function () { return Promise.resolve(JSON.parse(xhr.responseText)); }
+                });
+            };
+            xhr.onerror = function () { reject(new Error('network')); };
+            xhr.send();
+        });
+    };
+}
+
 let timeFormat = '24';
 let alarmDuration = 60;
 let showClock = true;
@@ -669,7 +687,11 @@ let timers = [];
 if (timersRef) {
     timersRef.on('value', (snapshot) => {
         const data = snapshot.val();
-        timers = data ? Object.keys(data).map(key => ({ id: key, ...data[key] })) : [];
+        timers = data ? Object.keys(data).map((key) => {
+            const timerData = Object.assign({}, data[key]);
+            timerData.id = key;
+            return timerData;
+        }) : [];
         renderTimers();
     });
 }
@@ -746,15 +768,23 @@ function removeTask(key) { if (tasksRef) tasksRef.child(key).remove(); }
 // ==========================================
 // مساعد الوصفات بالذكاء الاصطناعي (Puter.js - مجاني بدون مفتاح)
 // ==========================================
-async function callAI(prompt) {
-    if (typeof puter === 'undefined' || !puter.ai) throw new Error('ai-unavailable');
-    const response = await puter.ai.chat(prompt);
-    const text = extractAIText(response);
-    // بعض أخطاء Puter ترجع كنص ناجح بدل الاستثناء، نكتشفها ونحولها لاستثناء
-    if (!text || /ERROR|Cannot read|does not support|not authenticated|rate limit/i.test(text)) {
-        throw new Error('ai-error: ' + text);
-    }
-    return text;
+function callAI(prompt) {
+    // مكتوبة بأسلوب Promise القديم لتوافق iOS 10 (بدون async/await)
+    return new Promise((resolve, reject) => {
+        if (typeof puter === 'undefined' || !puter.ai) {
+            reject(new Error('ai-unavailable'));
+            return;
+        }
+        puter.ai.chat(prompt).then((response) => {
+            const text = extractAIText(response);
+            // بعض أخطاء Puter ترجع كنص ناجح بدل الاستثناء، نكتشفها ونحولها لاستثناء
+            if (!text || /ERROR|Cannot read|does not support|not authenticated|rate limit/i.test(text)) {
+                reject(new Error('ai-error'));
+                return;
+            }
+            resolve(text);
+        }).catch(reject);
+    });
 }
 
 function extractAIText(res) {
@@ -772,7 +802,7 @@ function extractAIText(res) {
 let lastSuggestedIngredients = '';
 
 // الخطوة 1: اقتراح أسماء أطباق حسب المكونات
-async function suggestDishes() {
+function suggestDishes() {
     const input = document.getElementById('ingredientsInput');
     const output = document.getElementById('recipeOutput');
     const box = document.getElementById('dishSuggestions');
@@ -787,19 +817,18 @@ async function suggestDishes() {
     output.innerText = 'جاري اقتراح الأطباق المناسبة لمكوناتك...';
     if (box) box.classList.add('hidden');
 
-    try {
-        const raw = await callAI(
-            'أنت طاهٍ محترف. المستخدم يملك هذه المكونات: ' + ingredients + '\n' +
-            'اقترح له 5 أطباق شهية يمكن تحضيرها بها (مثال: مكرونة حمراء، كبسة دجاج، رز مندي). ' +
-            'اكتب أسماء الأطباق فقط، كل اسم في سطر منفصل، بدون أرقام أو رموز أو أي شرح إضافي.'
-        );
+    callAI(
+        'أنت طاهٍ محترف. المستخدم يملك هذه المكونات: ' + ingredients + '\n' +
+        'اقترح له 5 أطباق شهية يمكن تحضيرها بها (مثال: مكرونة حمراء، كبسة دجاج، رز مندي). ' +
+        'اكتب أسماء الأطباق فقط، كل اسم في سطر منفصل، بدون أرقام أو رموز أو أي شرح إضافي.'
+    ).then((raw) => {
         const dishes = parseDishNames(raw);
         if (!dishes.length) throw new Error('empty');
         renderDishSuggestions(dishes);
         output.innerText = 'اختر طبقاً من الاقتراحات لعرض وصفته كاملة:';
-    } catch (err) {
-        output.innerText = 'خدمة الذكاء الاصطناعي غير متاحة الآن، تأكد من اتصال الإنترنت وحاول مجدداً.';
-    }
+    }).catch(() => {
+        output.innerText = 'خدمة الذكاء الاصطناعي غير متاحة على هذا الجهاز، تأكد من الاتصال بالإنترنت وحاول مجدداً.';
+    });
 }
 
 function parseDishNames(raw) {
@@ -826,26 +855,26 @@ function renderDishSuggestions(dishes) {
 }
 
 // الخطوة 2: عند اختيار الطبق تظهر الوصفة الكاملة
-async function selectDish(dishName, chipEl) {
+function selectDish(dishName, chipEl) {
     const output = document.getElementById('recipeOutput');
 
     document.querySelectorAll('.dish-chip.selected').forEach(c => c.classList.remove('selected'));
     if (chipEl) chipEl.classList.add('selected');
 
     output.innerText = 'جاري تجهيز وصفة «' + dishName + '» ...';
-    try {
-        const recipe = await callAI(
-            'أنت طاهٍ محترف. اكتب بالعربية وصفة عملية مفصلة للطبق التالي: «' + dishName + '»\n' +
-            'مع مراعاة أن المستخدم يملك هذه المكونات: ' + (lastSuggestedIngredients || 'غير محددة') + '\n' +
-            'الصيغة: اسم الطبق، وقت التحضير، المقادير كاملة، ثم خطوات التحضير مرقمة وباختصار.'
-        );
+
+    callAI(
+        'أنت طاهٍ محترف. اكتب بالعربية وصفة عملية مفصلة للطبق التالي: «' + dishName + '»\n' +
+        'مع مراعاة أن المستخدم يملك هذه المكونات: ' + (lastSuggestedIngredients || 'غير محددة') + '\n' +
+        'الصيغة: اسم الطبق، وقت التحضير، المقادير كاملة، ثم خطوات التحضير مرقمة وباختصار.'
+    ).then((recipe) => {
         output.innerText = recipe || 'تعذر الحصول على الوصفة، حاول مجدداً.';
-    } catch (err) {
-        output.innerText = 'خدمة الذكاء الاصطناعي غير متاحة الآن، تأكد من اتصال الإنترنت وحاول مجدداً.';
-    }
+    }).catch(() => {
+        output.innerText = 'خدمة الذكاء الاصطناعي غير متاحة على هذا الجهاز، تأكد من الاتصال بالإنترنت وحاول مجدداً.';
+    });
 }
 
-async function showSubstitutes() {
+function showSubstitutes() {
     const input = document.getElementById('ingredientsInput');
     const output = document.getElementById('recipeOutput');
     const ingredients = input ? input.value.trim() : '';
@@ -855,17 +884,18 @@ async function showSubstitutes() {
         return;
     }
 
+    lastSuggestedIngredients = ingredients;
     output.innerText = 'جاري البحث عن البدائل...';
-    try {
-        const subs = await callAI(
-            'أنت طاهٍ محترف. لدي هذه المكونات: ' + ingredients + '\n' +
-            'اكتب بالعربية وباختصار: بدائل منزلية شائعة لأهم المكونات الناقصة في الوصفات، ' +
-            'ثم اقترح 3 أطباق سريعة يمكن تحضيرها بهذه المكونات.'
-        );
+
+    callAI(
+        'أنت طاهٍ محترف. لدي هذه المكونات: ' + ingredients + '\n' +
+        'اكتب بالعربية وباختصار: بدائل منزلية شائعة لأهم المكونات الناقصة في الوصفات، ' +
+        'ثم اقترح 3 أطباق سريعة يمكن تحضيرها بهذه المكونات.'
+    ).then((subs) => {
         output.innerText = subs || 'تعذر الحصول على البدائل، حاول مجدداً.';
-    } catch (err) {
-        output.innerText = 'خدمة الذكاء الاصطناعي غير متاحة الآن، تأكد من اتصال الإنترنت وحاول مجدداً.';
-    }
+    }).catch(() => {
+        output.innerText = 'خدمة الذكاء الاصطناعي غير متاحة على هذا الجهاز، تأكد من الاتصال بالإنترنت وحاول مجدداً.';
+    });
 }
 document.addEventListener("DOMContentLoaded", function () {
   const currentYear = new Date().getFullYear();
