@@ -98,12 +98,14 @@
                     <!-- مساعد الذكاء الاصطناعي -->
                     <div class="special-section">
                         <h2><i class="fa-solid fa-robot"></i> مساعد الوصفات (AI)</h2>
-                        <textarea id="ingredientsInput" placeholder="أدخل المكونات..."></textarea>
+                        <textarea id="ingredientsInput" placeholder="مثال: بصل طماطم دجاج..."></textarea>
                         <div class="ai-btns">
-                            <button class="btn-primary" onclick="generateRecipe()">توليد وصفة</button>
+                            <button class="btn-primary" onclick="suggestDishes()">اقتراح أطباق</button>
                             <button class="btn-secondary" onclick="showSubstitutes()">بدائل</button>
                         </div>
-                        <div class="recipe-output" id="recipeOutput">أدخل المكونات للحصول على وصفة.</div>
+                        <!-- اقتراحات الأطباق القابلة للاختيار -->
+                        <div class="dish-suggestions hidden" id="dishSuggestions"></div>
+                        <div class="recipe-output" id="recipeOutput">أدخل مكوناتك ثم اضغط «اقتراح أطباق» واختر الطبق لعرض وصفتها.</div>
                     </div>
 
                     <!-- الصوت المخصص ومشغل الصوتيات -->
@@ -238,16 +240,11 @@
             <div class="idle-time" id="idleTime">12:00</div>
         </div>
     </div>
-<div class="site-container">
-  <main class="main-content">
-    <!-- استبدل مسار الصورة بالكلاس الخاص بك -->
-    <img src="your-image.png" alt="Technology Ali" class="hero-image">
-  </main>
-
-  <footer class="copyright-footer">
-    <p>جميع الحقوق محفوظة &copy; <span id="year"></span> اسم موقعك</p>
-  </footer>
-</div>
+<!-- شريط حقوق الملكية -->
+<footer class="copyright-footer">
+    <img src="logo.png" alt="Technology.Ali" class="copyright-logo">
+    <span>Technology.Ali &copy; جميع الحقوق محفوظة <span id="year"></span></span>
+</footer>
     <script src="script.js"></script>
 </body>
 </html>
