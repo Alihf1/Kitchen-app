@@ -20,7 +20,7 @@ body {
     display: flex;
     flex-direction: column;
     gap: 15px;
-    padding: 20px;
+    padding: 20px 20px 48px 20px;
     height: 100vh;
     background: rgba(0, 0, 0, 0.45);
     backdrop-filter: blur(6px);
@@ -31,6 +31,22 @@ body {
     justify-content: space-between;
     align-items: center;
     min-height: 60px;
+    max-height: 120px;
+    overflow: hidden;
+    transition: opacity 0.45s ease, transform 0.45s ease,
+                visibility 0.45s ease, max-height 0.45s ease, margin-bottom 0.45s ease;
+}
+
+/* عند إخفاء أدوات التحكم ينزلق الشريط العلوي بالكامل
+   وتتمدد قائمة المهام ومعرض الصور لملء الشاشة */
+.dashboard.controls-idle .top-bar-area {
+    min-height: 0;
+    max-height: 0;
+    margin-bottom: -15px; /* يلغي الفراغ بين الشريط والمحتوى */
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transform: translateY(-16px);
 }
 
 .weather-widget {
@@ -58,6 +74,15 @@ body {
 .top-actions {
     display: flex;
     gap: 10px;
+    transition: opacity 0.4s ease, transform 0.4s ease, visibility 0.4s ease;
+}
+
+/* إخفاء أزرار التحكم عند عدم الاستخدام */
+.top-actions.controls-hidden {
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transform: translateY(-12px);
 }
 
 .icon-btn {
@@ -236,3 +261,59 @@ body {
 .idle-overlay { position: absolute; bottom: 30px; left: 30px; }
 .idle-time { font-size: 4rem; font-weight: bold; }
 .settings-toast.hidden { display: none; }
+
+/* شريط حقوق الملكية */
+.copyright-footer {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  background-color: transparent;
+  color: #ffffff;
+  padding: 6px 12px;
+  font-size: 13px;
+  z-index: 1500;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.copyright-logo {
+  width: 24px;
+  height: 24px;
+  object-fit: contain;
+  border-radius: 50%;
+}
+
+/* اقتراحات الأطباق القابلة للاختيار */
+.dish-suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.dish-suggestions.hidden { display: none; }
+
+.dish-chip {
+  background: #333;
+  border: 1px solid #555;
+  color: #fff;
+  padding: 6px 14px;
+  border-radius: 20px;
+  cursor: pointer;
+  font-size: 0.95rem;
+  transition: all 0.2s ease;
+  user-select: none;
+}
+.dish-chip:hover {
+  background: #ff9800;
+  border-color: #ff9800;
+  color: #111;
+}
+.dish-chip.selected {
+  background: #ff9800;
+  border-color: #ff9800;
+  color: #111;
+  font-weight: bold;
+}
