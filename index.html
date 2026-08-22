@@ -6,225 +6,228 @@
     <title>شاشة المطبخ الذكية</title>
     <link rel="stylesheet" href="style.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <!-- مكتبات Firebase المطلوبة -->
+    <!-- مكتبات Firebase -->
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+    <!-- مكتبة الذكاء الاصطناعي المجانية -->
+    <script src="https://js.puter.com/v2/"></script>
 </head>
 <body id="bodyBg">
 
     <!-- الشاشة الرئيسية -->
     <div class="dashboard" id="dashboard">
         
-        <!-- الشريط العلوي -->
-        <button class="icon-btn settings-btn" onclick="openSettings()"><i class="fa-solid fa-gear"></i></button>
-        
-        <div class="top-center">
-            <div class="digital-clock" id="digitalClock">16:56</div>
-            <div class="date-display" id="dateDisplay">--/--/----</div>
-            <div class="analog-clock">
-                <div class="hand hour" id="hourHand"></div>
-                <div class="hand minute" id="minuteHand"></div>
-                <div class="center-dot"></div>
-            </div>
-        </div>
-
-        <div class="weather-widget">
-            <div class="weather-title">الطقس</div>
-            <div class="weather-info">
-                <i class="fa-solid fa-sun weather-icon" id="weatherIcon"></i>
-                <span class="temp" id="weatherTemp">28°C</span>
-            </div>
-            <div class="location" id="weatherLocation">القطيف، المملكة العربية السعودية</div>
-        </div>
-
-        <!-- المهام والتسوق -->
-        <div class="card tasks-card">
-            <h2><i class="fa-solid fa-list-check"></i> المهام </h2>
-            <div class="input-group">
-                <input type="text" id="taskInput" placeholder="أضف صنفًا أو مهمة...">
-                <button onclick="addItem()"><i class="fa-solid fa-plus"></i></button>
-            </div>
-
-
-            <div class="list-section">
-                <h3><i class="fa-solid fa-clipboard-list"></i> قائمة المهام</h3>
-                <ul id="todoList" class="item-list"></ul>
-            </div>
-        </div>
-
-        <!-- المؤقتات -->
-        <div class="card timers-card">
-            <div class="card-header-actions">
-                <h2><i class="fa-solid fa-stopwatch"></i> المؤقتات</h2>
-                <button class="btn-add-timer" onclick="showAddTimerInputs()"><i class="fa-solid fa-plus"></i> مؤقت جديد</button>
-            </div>
-
-            <div id="addTimerForm" class="add-timer-form hidden">
-                <input type="text" id="newTimerName" placeholder="اسم المؤقت (مثلاً: فرن الشوربة)">
-                <div class="time-inputs">
-                    <input type="number" id="newTimerH" min="0" max="23" placeholder="س">
-                    <input type="number" id="newTimerM" min="0" max="59" placeholder="د">
-                    <input type="number" id="newTimerS" min="0" max="59" placeholder="ث">
+        <!-- الشريط العلوي والتحكم -->
+        <div class="top-bar-area">
+            <!-- كارت الطقس -->
+            <div class="weather-widget" id="weatherWidget">
+                <div class="weather-info">
+                    <i class="fa-solid fa-sun weather-icon" id="weatherIcon"></i>
+                    <span class="temp" id="weatherTemp">28°C</span>
                 </div>
-                <label style="font-size: 0.8rem;">صوت التنبيه الخاص بالمؤقت:</label>
-                <select id="newTimerSound">
-                    <option value="default_1">افتراضي 1: تنبيه كلاسيكي</option>
-                    <option value="default_2">افتراضي 2: نغمة هادئة</option>
-                    <option value="default_3">افتراضي 3: جرس إلكتروني</option>
-                    <option value="custom">الصوت المخصص (من قائمة الأصوات)</option>
-                </select>
-                <button onclick="addNewTimer()">إضافة</button>
+                <div class="location" id="weatherLocation">القطيف، المملكة العربية السعودية</div>
             </div>
 
-            <div class="timers-container" id="timersContainer"></div>
-        </div>
-
-        <!-- مساعد الذكاء الاصطناعي -->
-        <div class="card ai-card">
-            <h2><i class="fa-solid fa-robot"></i> مساعد الوصفات (AI)</h2>
-            <textarea id="ingredientsInput" placeholder="دجاج و طماطم وبصل..."></textarea>
-            
-            <div class="ai-btns">
-                <button class="btn-primary" onclick="generateRecipe()">توليد وصفة</button>
-                <button class="btn-secondary" onclick="showSubstitutes()">بدائل المكونات</button>
+            <!-- كارت الساعة -->
+            <div class="top-center" id="clockWidget">
+                <div class="digital-clock" id="digitalClock">12:00</div>
+                <div class="date-display" id="dateDisplay">--/--/----</div>
             </div>
 
-            <div class="recipe-output" id="recipeOutput">
-                أدخل المكونات واضغط على توليد للحصول على وصفة فورية.
+            <div class="top-actions">
+                <button class="icon-btn special-menu-btn" onclick="toggleSpecialMenu()">
+                    <i class="fa-solid fa-star"></i> القائمة المميزة
+                </button>
+                <button class="icon-btn settings-btn" onclick="openSettings()"><i class="fa-solid fa-gear"></i></button>
             </div>
         </div>
 
-        <!-- الشريط السفلي -->
-        <button class="bottom-btn left-btn" onclick="triggerIdleMode()">
-            <i class="fa-solid fa-images"></i> صور الذكريات
-        </button>
-
-        <!-- مشغل الصوتيات المطور -->
-        <div class="bottom-btn right-btn audio-player-wrapper">
-            <div class="audio-info-btn" onclick="togglePlaylistMenu()">
-                <i class="fa-solid fa-music"></i>
-                <span id="audioTrackLabel">اختر مقطعاً صوتياً</span>
-                <i class="fa-solid fa-chevron-up text-xs margin-right-auto"></i>
-            </div>
-            <!-- زر التشغيل على جنب دون إظهار القائمة -->
-            <button class="play-audio-btn" onclick="toggleMainAudioPlay(event)" title="تشغيل / إيقاف">
-                <i class="fa-solid fa-play" id="audioIcon"></i>
-            </button>
-
-            <!-- القائمة المنبثقة لاختيار الصوت -->
-            <div class="playlist-dropdown hidden" id="playlistDropdown">
-                <div class="playlist-header">
-                    <span>قائمة الأصوات المتاحة</span>
-                    <i class="fa-solid fa-xmark" onclick="togglePlaylistMenu()"></i>
+        <!-- المحتوى الرئيسي للشاشة -->
+        <div class="main-content-grid">
+            <!-- قائمة المهام -->
+            <div class="card tasks-card">
+                <h2><i class="fa-solid fa-list-check"></i> قائمة المهام</h2>
+                <div class="input-group">
+                    <input type="text" id="taskInput" placeholder="أضف صنفًا أو مهمة...">
+                    <button onclick="addItem()"><i class="fa-solid fa-plus"></i></button>
                 </div>
-                <ul id="playlistItems" class="playlist-items">
-                    <li class="empty-msg">لا توجد أصوات مخصصة، أضف ملفات من الإعدادات</li>
-                </ul>
+                <div class="list-section">
+                    <ul id="todoList" class="item-list"></ul>
+                </div>
+            </div>
+
+            <!-- الصور الخاصة / عرض الذكريات -->
+            <div class="card custom-image-card" onclick="triggerIdleMode()" title="اضغط لتكبير الشاشة بالكامل">
+                <div class="custom-image-view" id="mainCustomImageView">
+                    <span>الصور الخاصة</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- القائمة المميزة المنبثقة -->
+        <div class="special-modal hidden" id="specialMenuModal" onclick="closeSpecialMenuOnBackdrop(event)">
+            <div class="special-modal-content" id="specialMenuContent">
+                <div class="special-modal-header">
+                    <h3><i class="fa-solid fa-star" style="color: #ff9800;"></i> القائمة المميزة</h3>
+                    <span class="close-btn" onclick="toggleSpecialMenu()">&times;</span>
+                </div>
+                
+                <div class="special-grid">
+                    <!-- المؤقتات -->
+                    <div class="special-section">
+                        <div class="card-header-actions">
+                            <h2><i class="fa-solid fa-stopwatch"></i> المؤقتات</h2>
+                            <button class="btn-add-timer" onclick="showAddTimerInputs()"><i class="fa-solid fa-plus"></i> جديد</button>
+                        </div>
+                        <div id="addTimerForm" class="add-timer-form hidden">
+                            <input type="text" id="newTimerName" placeholder="اسم المؤقت">
+                            <div class="time-inputs" style="display: flex; gap: 5px; margin: 5px 0;">
+                                <input type="number" id="newTimerH" min="0" max="23" placeholder="ساعة" value="0">
+                                <input type="number" id="newTimerM" min="0" max="59" placeholder="دقيقة" value="0">
+                                <input type="number" id="newTimerS" min="0" max="59" placeholder="ثانية" value="0">
+                            </div>
+                            <select id="newTimerSound" style="width: 100%; padding: 5px; margin-bottom: 5px;">
+                                <option value="default_1">تنبيه كلاسيكي</option>
+                                <option value="custom">الصوت المخصص</option>
+                            </select>
+                            <button onclick="addNewTimer()" style="width:100%; padding: 6px; background:#2e7d32; color:white; border:none; border-radius:4px; cursor:pointer;">إضافة</button>
+                        </div>
+                        <div class="timers-container" id="timersContainer"></div>
+                    </div>
+
+                    <!-- مساعد الذكاء الاصطناعي -->
+                    <div class="special-section">
+                        <h2><i class="fa-solid fa-robot"></i> مساعد الوصفات (AI)</h2>
+                        <textarea id="ingredientsInput" placeholder="أدخل المكونات..."></textarea>
+                        <div class="ai-btns">
+                            <button class="btn-primary" onclick="generateRecipe()">توليد وصفة</button>
+                            <button class="btn-secondary" onclick="showSubstitutes()">بدائل</button>
+                        </div>
+                        <div class="recipe-output" id="recipeOutput">أدخل المكونات للحصول على وصفة.</div>
+                    </div>
+
+                    <!-- الصوت المخصص ومشغل الصوتيات -->
+                    <div class="special-section audio-section-box">
+                        <h2><i class="fa-solid fa-music"></i> الصوت المخصص</h2>
+                        <div class="audio-player-wrapper-inner">
+                            <div class="audio-info-btn" onclick="togglePlaylistMenu()">
+                                <i class="fa-solid fa-play" onclick="toggleMainAudioPlay(event)" id="audioIcon"></i>
+                                <span id="audioTrackLabel">اختر مقطعاً صوتياً</span>
+                            </div>
+                            <div class="playlist-dropdown hidden" id="playlistDropdown">
+                                <ul id="playlistItems" class="playlist-items">
+                                    <li class="empty-msg">لا توجد أصوات مضافة، أضفها من الإعدادات</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- صور الذكريات -->
+                    <div class="special-section">
+                        <h2><i class="fa-solid fa-images"></i> صور الذكريات</h2>
+                        <button class="btn-primary" style="width:100%; margin-top:5px;" onclick="triggerIdleMode()">عرض وضع الشاشة الكاملة</button>
+                    </div>
+                </div>
             </div>
         </div>
 
     </div>
 
     <!-- نافذة الإعدادات الشاملة (Modal) -->
-    <div class="modal" id="settingsModal">
-        <div class="modal-content">
+    <div class="modal" id="settingsModal" onclick="closeSettingsOnBackdrop(event)">
+        <div class="modal-content" id="settingsModalContent">
             <div class="modal-header">
                 <h3><i class="fa-solid fa-sliders"></i> لوحة الإعدادات</h3>
                 <span class="close-btn" onclick="closeSettings()">&times;</span>
             </div>
             <div class="modal-body">
+
+                <!-- التحكم في إظهار وإخفاء عناصر الواجهة -->
+                <div class="setting-group">
+                    <h4><i class="fa-solid fa-eye"></i> إعدادات العرض الشاشة</h4>
+                    <div class="setting-toggle-row">
+                        <span>إظهار الساعة</span>
+                        <button class="btn-toggle" id="toggleClockBtn" onclick="toggleClockVisibility()">إخفاء</button>
+                    </div>
+                    <div class="setting-toggle-row">
+                        <span>إظهار الطقس</span>
+                        <button class="btn-toggle" id="toggleWeatherBtn" onclick="toggleWeatherVisibility()">إخفاء</button>
+                    </div>
+                </div>
                 
-                <!-- تخصيص صيغة الوقت -->
+                <!-- صيغة الوقت -->
                 <div class="setting-group">
                     <h4><i class="fa-solid fa-clock"></i> صيغة عرض الوقت</h4>
-                    <label>اختر نظام عرض الساعة:</label>
-                    <select id="timeFormatSelect" onchange="changeTimeFormat(this.value)" style="padding: 6px; border-radius: 4px; border: none; background: #444; color: white;">
-                        <option value="12">توقيت 12 ساعة (مثال: 04:30 ص)</option>
-                        <option value="24" selected>توقيت 24 ساعة (مثال: 16:30)</option>
+                    <select id="timeFormatSelect" onchange="changeTimeFormat(this.value)">
+                        <option value="12">توقيت 12 ساعة</option>
+                        <option value="24" selected>توقيت 24 ساعة</option>
                     </select>
                 </div>
 
-                <!-- تخصيص مدة رنين المنبه -->
+                <!-- تخصيص سرعة تبديل الصورة المخصصة -->
+                <div class="setting-group">
+                    <h4><i class="fa-solid fa-stopwatch"></i> سرعة تبديل صور الذكريات</h4>
+                    <select id="imageRotateIntervalSelect" onchange="changeImageInterval(this.value)">
+                        <option value="5000">كل 5 ثوانٍ</option>
+                        <option value="10000" selected>كل 10 ثوانٍ</option>
+                        <option value="30000">كل 30 ثانية</option>
+                        <option value="60000">كل دقيقة</option>
+                    </select>
+                </div>
+
+                <!-- مدة رنين المنبه -->
                 <div class="setting-group">
                     <h4><i class="fa-solid fa-bell"></i> مدة رنين المنبه</h4>
-                    <label>حدد وقت استمرار صوت المنبه عند انتهاء الوقت:</label>
                     <div style="display: flex; gap: 10px; align-items: center;">
-                        <input type="time" id="alarmDurationInput" value="01:00" min="00:01" max="10:00" style="padding: 6px; border-radius: 4px; border: none; background: #444; color: white;">
-                        <button onclick="saveAlarmDuration()">حفظ المدة</button>
+                        <input type="time" id="alarmDurationInput" value="01:00">
+                        <button onclick="saveAlarmDuration()">حفظ</button>
                     </div>
-                    <small style="color: #aaa; font-size: 0.75rem;">(الأدنى: 00:01 - الأقصى: 10:00 دقائق)</small>
                     <div id="settingsNotification" class="settings-toast hidden"></div>
                 </div>
 
-                <!-- 1. خلفية التطبيق -->
+                <!-- خلفية التطبيق -->
                 <div class="setting-group">
                     <h4><i class="fa-solid fa-image"></i> خلفية التطبيق</h4>
-                    <label>اختر صورة من خلفيات البرنامج الجاهزة:</label>
-                    <div class="preset-bg-container">
-                        <img src="https://images.unsplash.com/photo-1556911220-e15b29be8c8f?q=80&w=600" class="preset-bg-thumb" onclick="setPresetBg('https://images.unsplash.com/photo-1556911220-e15b29be8c8f?q=80&w=1920')">
-                        <img src="https://images.unsplash.com/photo-1600585154340-be6161a56a0c?q=80&w=600" class="preset-bg-thumb" onclick="setPresetBg('https://images.unsplash.com/photo-1600585154340-be6161a56a0c?q=80&w=1920')">
-                        <img src="https://images.unsplash.com/photo-1507089947368-19c1da9775ae?q=80&w=600" class="preset-bg-thumb" onclick="setPresetBg('https://images.unsplash.com/photo-1507089947368-19c1da9775ae?q=80&w=1920')">
-                    </div>
-                    <label>أو اختيار صورة من جهازك الشخصي:</label>
                     <input type="file" id="localBgFile" accept="image/*" onchange="uploadLocalBg(event)">
-                    <label>أو اختيار لون عادي:</label>
                     <input type="color" id="bgColorPicker" onchange="changeBgColor(this.value)">
                 </div>
 
-                <!-- 2. موقع الطقس -->
+                <!-- موقع الطقس مع تحديد موقع الجهاز -->
                 <div class="setting-group">
-                    <h4><i class="fa-solid fa-location-dot"></i> موقع الطقس والوقت</h4>
-                    <button onclick="getLocationGeo()"><i class="fa-solid fa-crosshairs"></i> استخدام موقع الجهاز التلقائي</button>
-                    <label>أو أدخل المدينة يدوياً:</label>
-                    <input type="text" id="manualCityInput" placeholder="مثلاً: الرياض، دبي...">
-                    <button onclick="setManualCity()">حفظ المدينة</button>
+                    <h4><i class="fa-solid fa-location-dot"></i> خدمة الموقع والطقس</h4>
+                    <button class="btn-action-full" onclick="getLocationGeo()"><i class="fa-solid fa-crosshairs"></i> تحديد موقع الجهاز الحالي</button>
+                    <div style="display: flex; gap: 5px; margin-top: 5px;">
+                        <input type="text" id="manualCityInput" placeholder="أو أدخل المدینة يدوياً...">
+                        <button onclick="setManualCity()">حفظ</button>
+                    </div>
                 </div>
 
-                <!-- 3. صور الذكريات -->
+                <!-- الصور المخصصة والذكريات -->
                 <div class="setting-group">
-                    <h4><i class="fa-solid fa-photo-film"></i> صور شاشة الذكريات</h4>
-                    <label>إضافة صورة من جهازك:</label>
+                    <h4><i class="fa-solid fa-photo-film"></i> الصور المخصصة والذكريات</h4>
+                    <label>إضافة صورة رئيسية أو للذكريات من جهازك:</label>
                     <input type="file" id="localMemoryFile" accept="image/*" onchange="uploadLocalMemoryImg(event)">
-                    <label>أو إضافة رابط صورة خارجي:</label>
-                    <input type="text" id="newMemoryImg" placeholder="رابط الصورة...">
-                    <button onclick="addMemoryImage()">إضافة رابط</button>
                     <ul id="memoryImageList" class="settings-list"></ul>
                 </div>
 
-                <!-- 4. الصوت والمحطات المحدثة -->
+                <!-- الصوت المخصص -->
                 <div class="setting-group">
-                    <h4><i class="fa-solid fa-radio"></i> تخصيص الصوتيات</h4>
-                    <label>رفع ملفات صوتية متعددة من جهازك (MP3 / WAV):</label>
+                    <h4><i class="fa-solid fa-radio"></i> تخصيص الصوت والمقاطع</h4>
                     <input type="file" id="localAudioFiles" accept="audio/*" multiple onchange="uploadMultipleAudioFiles(event)">
-
-                    <label>أو أدخل رابط بث صوتي مباشر (URL):</label>
-                    <input type="text" id="audioNameInput" placeholder="اسم الصوت أو القناة">
-                    <input type="text" id="audioUrlInput" placeholder="https://...">
-                    <button onclick="saveAudioUrlSetting()">إضافة رابط البث</button>
-
-                    <!-- قائمة الأصوات المضافة والتأكيد -->
-                    <div style="margin-top: 10px;">
-                        <label style="font-weight: bold;">الأصوات المخزنة حالياً:</label>
-                        <ul id="settingsAudioList" class="settings-list"></ul>
-                        <button onclick="confirmAndSaveAudioList()" style="background: #2e7d32; margin-top: 8px; width: 100%;">
-                            <i class="fa-solid fa-floppy-disk"></i> حفظ وتأكيد الأصوات
-                        </button>
-                    </div>
+                    <ul id="settingsAudioList" class="settings-list"></ul>
                 </div>
 
             </div>
         </div>
     </div>
 
-    <!-- نافذة تنبيه المنبه عند انتهاء الوقت -->
+    <!-- نافذة تنبيه المنبه -->
     <div class="modal" id="alarmModal" style="z-index: 3000;">
         <div class="modal-content" style="text-align: center; max-width: 380px; padding: 25px;">
             <i class="fa-solid fa-bell fa-bounce" style="font-size: 3.5rem; color: #ff9800; margin-bottom: 15px;"></i>
-            <h2 id="alarmModalTitle" style="margin-bottom: 10px;">انتهى الوقت!</h2>
-            <p id="alarmModalText" style="margin-bottom: 20px; font-size: 1.1rem; opacity: 0.9;">مؤقت المطبخ</p>
-            <button onclick="stopAlarmSound()" style="background: #e53935; color: white; border: none; padding: 12px 25px; border-radius: 8px; font-size: 1.1rem; cursor: pointer; width: 100%; font-weight: bold;">
-                <i class="fa-solid fa-bell-slash"></i> إيقاف المنبه
-            </button>
+            <h2 id="alarmModalTitle">انتهى الوقت!</h2>
+            <p id="alarmModalText">مؤقت المطبخ</p>
+            <button onclick="stopAlarmSound()" style="background: #e53935; color: white; border: none; padding: 12px 25px; border-radius: 8px; cursor: pointer; width: 100%;">إيقاف المنبه</button>
         </div>
     </div>
 
@@ -232,18 +235,19 @@
     <div class="idle-screen" id="idleScreen" onclick="wakeUp()">
         <div class="slideshow" id="slideshow"></div>
         <div class="idle-overlay">
-            <div class="idle-time" id="idleTime">16:56</div>
-            <div class="mini-audio-player" onclick="event.stopPropagation()">
-                <i class="fa-solid fa-music"></i>
-                <div class="audio-info">
-                    <span class="track-name" id="idleTrackName">صوتيات المطبخ</span>
-                    <span class="artist">صوت مخصص</span>
-                </div>
-                <button onclick="toggleMainAudioPlay(event)"><i class="fa-solid fa-play" id="idleAudioIcon"></i></button>
-            </div>
+            <div class="idle-time" id="idleTime">12:00</div>
         </div>
     </div>
+<div class="site-container">
+  <main class="main-content">
+    <!-- استبدل مسار الصورة بالكلاس الخاص بك -->
+    <img src="your-image.png" alt="Technology Ali" class="hero-image">
+  </main>
 
+  <footer class="copyright-footer">
+    <p>جميع الحقوق محفوظة &copy; <span id="year"></span> اسم موقعك</p>
+  </footer>
+</div>
     <script src="script.js"></script>
 </body>
 </html>
