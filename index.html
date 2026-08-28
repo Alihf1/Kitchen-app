@@ -106,11 +106,6 @@
                             <button class="btn-primary" onclick="suggestDishes()">اقتراح أطباق</button>
                             <button class="btn-secondary" onclick="showSubstitutes()">بدائل</button>
                         </div>
-                        <!-- مزامنة حساب AI بين جميع الأجهزة -->
-                        <div class="ai-account-bar">
-                            <span id="aiSyncStatus">جاري التحقق من حساب AI...</span>
-                            <button onclick="syncAITokenNow()" title="سجّل دخولك بحساب AI مرة واحدة ثم اضغط الربط ليشتغل على كل الأجهزة"><i class="fa-solid fa-link"></i> ربط حساب AI بجميع الأجهزة</button>
-                        </div>
                         <!-- اقتراحات الأطباق القابلة للاختيار -->
                         <div class="dish-suggestions hidden" id="dishSuggestions"></div>
                         <div class="recipe-output" id="recipeOutput">أدخل مكوناتك ثم اضغط «اقتراح أطباق» واختر الطبق لعرض وصفتها.</div>
@@ -229,8 +224,18 @@
                 <!-- الصوت المخصص -->
                 <div class="setting-group">
                     <h4><i class="fa-solid fa-radio"></i> تخصيص الصوت والمقاطع</h4>
-                    <input type="file" id="localAudioFiles" accept="audio/*" multiple onchange="uploadMultipleAudioFiles(event)">
+                    <input type="file" id="localAudioFiles" accept=".mp3,.wav,.m4a,.aac,.ogg,.oga,.flac,.opus,.mp4,.mov,.m4v,.3gp,.mkv,audio/*,video/*,audio/mp3,audio/mpeg,audio/wav,audio/x-wav,audio/mp4,audio/aac,audio/ogg,audio/flac,video/mp4,video/quicktime" multiple onchange="uploadMultipleAudioFiles(event)">
                     <ul id="settingsAudioList" class="settings-list"></ul>
+                </div>
+
+                <!-- مزامنة حساب الذكاء الاصطناعي بين جميع الأجهزة -->
+                <div class="setting-group">
+                    <h4><i class="fa-solid fa-robot"></i> حساب الذكاء الاصطناعي (AI)</h4>
+                    <label>اربط حسابك مرة واحدة وسيعمل على جميع أجهزتك بدون تسجيل دخول:</label>
+                    <div class="ai-account-bar">
+                        <span id="aiSyncStatus">جاري التحقق من حساب AI...</span>
+                        <button onclick="syncAITokenNow()" title="سجّل دخولك بحساب AI مرة واحدة ثم اضغط الربط ليشتغل على كل الأجهزة"><i class="fa-solid fa-link"></i> ربط حساب AI بجميع الأجهزة</button>
+                    </div>
                 </div>
 
             </div>
