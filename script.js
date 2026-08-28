@@ -80,6 +80,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     setupHoverClose();
     setupAutoHideControls();
+    ensureAITokenReady();
 });
 
 function initRealtimeSync() {
@@ -365,6 +366,10 @@ function changeImageInterval(val) {
     imageRotationIntervalTime = parseInt(val);
     if (settingsRef) settingsRef.update({ imageInterval: imageRotationIntervalTime });
     startImageRotation();
+    if (idleInterval) {
+        clearInterval(idleInterval);
+        idleInterval = setInterval(changeSlideshowImage, imageRotationIntervalTime);
+    }
 }
 
 function startImageRotation() {
@@ -639,7 +644,7 @@ function triggerIdleModeUI() {
     setTimeout(() => { document.getElementById('idleScreen').style.opacity = '1'; }, 10);
     changeSlideshowImage();
     if (idleInterval) clearInterval(idleInterval);
-    idleInterval = setInterval(changeSlideshowImage, 5000);
+    idleInterval = setInterval(changeSlideshowImage, imageRotationIntervalTime);
 }
 function wakeUpUI() {
     const idle = document.getElementById('idleScreen');
@@ -655,16 +660,24 @@ function changeSlideshowImage() {
     }
 }
 function uploadLocalMemoryImg(e) {
-    const file = e.target.files[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = function (evt) {
-        memoryImages.push(evt.target.result);
-        if (settingsRef) settingsRef.update({ memories: memoryImages });
-        updateMainCustomImage();
-        showNotification('تمت إضافة الصورة بنجاح');
-    };
-    reader.readAsDataURL(file);
+    var files = e.target.files;
+    if (!files || files.length === 0) return;
+    var total = files.length;
+    var loaded = 0;
+    Array.from(files).forEach(function (file) {
+        var reader = new FileReader();
+        reader.onload = function (evt) {
+            memoryImages.push(evt.target.result);
+            loaded++;
+            if (loaded === total) {
+                if (settingsRef) settingsRef.update({ memories: memoryImages });
+                updateMainCustomImage();
+                renderMemoryList();
+                showNotification('تمت إضافة ' + total + ' صورة بنجاح');
+            }
+        };
+        reader.readAsDataURL(file);
+    });
 }
 function renderMemoryList() {
     const list = document.getElementById('memoryImageList');
@@ -766,6 +779,144 @@ function addItem() {
 function removeTask(key) { if (tasksRef) tasksRef.child(key).remove(); }
 
 // ==========================================
+// مزامنة حساب الذكاء الاصطناعي (Puter) بين جميع الأجهزة
+// تسجيل الدخول مرة واحدة فقط، ثم يعمل على كل الأجهزة تلقائياً
+// ==========================================
+let aiReadyPromise = null;
+let aiAutoLinked = false;
+
+function waitForPuterAuth(callback, tries) {
+    tries = tries || 0;
+    if (typeof puter !== 'undefined' && puter.auth) {
+        callback();
+        return;
+    }
+    if (tries >= 150) return;
+    setTimeout(function () { waitForPuterAuth(callback, tries + 1); }, 200);
+}
+
+function setAISyncStatus(text) {
+    const el = document.getElementById('aiSyncStatus');
+    if (el) el.innerText = text;
+}
+
+// التوكن يحفظه الـ SDK نفسه في localStorage تحت هذا المفتاح الرسمي (v2)
+const PUTER_TOKEN_KEY = 'puter.auth.token.v2';
+
+function getLocalPuterToken() {
+    try {
+        const t = localStorage.getItem(PUTER_TOKEN_KEY);
+        if (t) return t;
+    } catch (e) {}
+    try {
+        if (typeof puter !== 'undefined' && puter.authToken) return puter.authToken;
+    } catch (e) {}
+    return '';
+}
+
+// تسجيل الدخول بحساب Puter عند عدم وجود حساب مخزّن (يفتح نافذة تسجيل Puter)
+function promptUserSignIn() {
+    if (typeof puter === 'undefined' || !puter.ui || !puter.ui.authenticateWithPuter) {
+        return Promise.reject(new Error('no-token'));
+    }
+    return puter.ui.authenticateWithPuter().then(function () {
+        const t = getLocalPuterToken();
+        if (t) return t;
+        throw new Error('no-token');
+    });
+}
+
+function puterGetToken() {
+    const t = getLocalPuterToken();
+    if (t) return Promise.resolve(t);
+    return promptUserSignIn();
+}
+
+// التفعيل الصحيح لحساب Puter: puter.setAuthToken يحفظ التوكن ويفعّله فوراً
+function puterSetToken(token) {
+    const normalized = String(token || '').trim();
+    if (!normalized || normalized === 'null' || normalized === 'undefined') {
+        return Promise.reject(new Error('no-token'));
+    }
+    try {
+        if (typeof puter !== 'undefined' && puter.setAuthToken) {
+            puter.setAuthToken(normalized);
+        } else {
+            localStorage.setItem(PUTER_TOKEN_KEY, normalized);
+        }
+    } catch (e) {
+        try { localStorage.setItem(PUTER_TOKEN_KEY, normalized); } catch (e2) {}
+    }
+    return Promise.resolve();
+}
+
+// تفعيل الحساب المخزن على هذا الجهاز قبل أي استدعاء للذكاء الاصطناعي
+function ensureAITokenReady() {
+    if (!settingsRef) return Promise.resolve();
+    if (aiReadyPromise) return aiReadyPromise;
+    aiReadyPromise = new Promise(function (resolve) {
+        waitForPuterAuth(function () {
+            if (!settingsRef) { resolve(); return; }
+            settingsRef.child('aiToken').once('value', function (snap) {
+                const token = snap.val();
+                if (!token) {
+                    setAISyncStatus('لم يُربط حساب AI بعد، اضغط «ربط حساب AI» من أحد الأجهزة مرة واحدة');
+                    resolve();
+                    return;
+                }
+                puterSetToken(token).then(function () {
+                    setAISyncStatus('الحساب مفعّل على هذا الجهاز تلقائياً');
+                    resolve();
+                }).catch(function () {
+                    setAISyncStatus('تعذر تفعيل الحساب، يرجى إعادة الربط');
+                    resolve();
+                });
+            }, function () {
+                resolve();
+            });
+        });
+    });
+    return aiReadyPromise;
+}
+
+// حفظ حساب AI الحالي في Firebase ليشتغل على جميع الأجهزة
+// إن لم يكن هناك حساب مخزّن، يفتح نافذة تسجيل دخول Puter ثم يحفظ
+function saveCurrentAIToken() {
+    if (!settingsRef) return;
+    setAISyncStatus('جاري ربط حساب AI...');
+    waitForPuterAuth(function () {
+        if (!settingsRef) return;
+        puterGetToken().then(function (token) {
+            settingsRef.update({ aiToken: token });
+            aiAutoLinked = true;
+            setAISyncStatus('تم ربط الحساب: يعمل الآن على جميع الأجهزة');
+        }).catch(function () {
+            setAISyncStatus('تعذر ربط الحساب، تأكد من الإنترنت وحاول مجدداً');
+        });
+    });
+}
+
+function syncAITokenNow() {
+    saveCurrentAIToken();
+}
+
+// ربط الحساب تلقائياً بعد أول طلب ناجح حتى لا يضطر المستخدم لأي زر
+function autoLinkAIToken() {
+    if (!settingsRef) return;
+    waitForPuterAuth(function () {
+        if (!settingsRef) { aiAutoLinked = true; return; }
+        const t = getLocalPuterToken();
+        if (!t) { aiAutoLinked = true; return; }
+        settingsRef.child('aiToken').once('value', function (snap) {
+            if (snap.val() === t) { aiAutoLinked = true; return; }
+            if (aiAutoLinked) return;
+            settingsRef.update({ aiToken: t });
+            aiAutoLinked = true;
+        }, function () { aiAutoLinked = true; });
+    });
+}
+
+// ==========================================
 // مساعد الوصفات بالذكاء الاصطناعي (Puter.js - مجاني بدون مفتاح)
 // ==========================================
 function callAI(prompt) {
@@ -775,15 +926,21 @@ function callAI(prompt) {
             reject(new Error('ai-unavailable'));
             return;
         }
-        puter.ai.chat(prompt).then((response) => {
-            const text = extractAIText(response);
-            // بعض أخطاء Puter ترجع كنص ناجح بدل الاستثناء، نكتشفها ونحولها لاستثناء
-            if (!text || /ERROR|Cannot read|does not support|not authenticated|rate limit/i.test(text)) {
-                reject(new Error('ai-error'));
-                return;
-            }
-            resolve(text);
-        }).catch(reject);
+        // نفعّل الحساب المخزن أولاً ثم نستخدم الذكاء الاصطناعي
+        ensureAITokenReady().then(() => {
+            puter.ai.chat(prompt).then((response) => {
+                const text = extractAIText(response);
+                // بعض أخطاء Puter ترجع كنص ناجح بدل الاستثناء، نكتشفها ونحولها لاستثناء
+                if (!text || /ERROR|Cannot read|does not support|not authenticated|rate limit/i.test(text)) {
+                    reject(new Error('ai-error'));
+                    return;
+                }
+                autoLinkAIToken();
+                resolve(text);
+            }).catch(reject);
+        }).catch(() => {
+            reject(new Error('ai-error'));
+        });
     });
 }
 
