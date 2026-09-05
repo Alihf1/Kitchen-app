@@ -166,7 +166,9 @@ function initRealtimeSync() {
             renderPlaylistDropdown();
         }
 
-        if (settings.city) {
+        if (settings.locationMode === 'device') {
+            getLocationGeo();
+        } else if (settings.city) {
             currentCity = settings.city;
             getWeatherByCityName(settings.city);
         }
@@ -233,7 +235,10 @@ function initRealtimeSync() {
     });
 
     settingsRef.child('city').once('value', (snap) => {
-        if (!snap.val()) getLocationGeo();
+        if (snap.val()) return;
+        settingsRef.child('locationMode').once('value', (mode) => {
+            if (!mode.val()) getLocationGeo();
+        });
     });
 }
 
@@ -642,6 +647,7 @@ function getLocationGeo() {
             fetchWeatherByCoords(deviceLat, deviceLon, 'موقعك الحالي');
             resetAdhanCache();
             updateAdhanTimesAndCheck();
+            if (settingsRef) settingsRef.update({ locationMode: 'device' });
             showNotification('تم تحديث الطقس بناءً على موقع الجهاز');
         }, () => {
             showNotification('عذراً، متعذر الوصول للموقع. تم اختيار الرياض كافتراضي');
@@ -660,7 +666,7 @@ function setManualCity() {
 function setManualCityName(cityName) {
     currentCity = cityName;
     updateAdhanTimesAndCheck();
-    if (settingsRef) settingsRef.update({ city: cityName });
+    if (settingsRef) settingsRef.update({ city: cityName, locationMode: 'city' });
 }
 
 function getWeatherByCityName(cityName) {
