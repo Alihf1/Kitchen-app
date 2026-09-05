@@ -25,6 +25,7 @@ body {
     background: rgba(0, 0, 0, 0.45);
     -webkit-backdrop-filter: blur(6px);
     backdrop-filter: blur(6px);
+    position: relative;
 }
 
 .top-bar-area {
@@ -35,19 +36,34 @@ body {
     max-height: 120px;
     overflow: hidden;
     transition: opacity 0.45s ease, transform 0.45s ease,
-                visibility 0.45s ease, max-height 0.45s ease, margin-bottom 0.45s ease;
+                visibility 0.45s ease, max-height 0.45s ease, min-height 0.45s ease, margin-bottom 0.45s ease;
 }
 
-/* عند إخفاء أدوات التحكم ينزلق الشريط العلوي بالكامل
-   وتتمدد قائمة المهام ومعرض الصور لملء الشاشة */
-.dashboard.controls-idle .top-bar-area {
+/* عند إخفاء الساعة والطقس معاً ينطوي الشريط العلوي لتمتلئ الشاشة */
+.top-bar-area.collapsed {
     min-height: 0;
-    max-height: 0;
-    margin-bottom: -15px; /* يلغي الفراغ بين الشريط والمحتوى */
+    justify-content: flex-start;
+    margin-bottom: -15px;
+}
+.top-bar-area.collapsed .top-center,
+.top-bar-area.collapsed .weather-widget {
+    display: none;
+}
+/* أزرار التحكم تطفو فوق المحتوى ولا تشغل مساحة عند انطواء الشريط */
+.top-bar-area.collapsed .top-actions {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    z-index: 10;
+}
+
+/* عند إخفاء أدوات التحكم تتخفى الأزرار فقط (القائمة المميزة والإعدادات)
+   بينما تبقى الساعة والطقس ظاهرتين */
+.dashboard.controls-idle .top-actions {
     opacity: 0;
     visibility: hidden;
     pointer-events: none;
-    transform: translateY(-16px);
+    transform: translateY(-12px);
 }
 
 .weather-widget {
