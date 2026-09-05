@@ -278,6 +278,41 @@ body {
 .timer-box { background: rgba(0,0,0,0.4); padding: 10px; border-radius: 8px; text-align: center; flex: 1 1 calc(50% - 10px); position: relative; }
 .delete-timer-btn { position: absolute; top: 5px; left: 5px; color: #ff5252; cursor: pointer; }
 
+/* مواقيت الأذان والعد التنازلي */
+.next-adhan-box {
+    background: rgba(0,0,0,0.4);
+    border: 1px solid #0288d1;
+    border-radius: 10px;
+    padding: 12px;
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+.next-adhan-name { font-weight: bold; color: #4fc3f7; font-size: 1rem; }
+.next-adhan-time { font-size: 1.3rem; font-weight: bold; color: #fff; }
+.next-adhan-countdown { font-size: 1.1rem; color: #ffd54f; font-family: monospace; direction: ltr; }
+
+/* صفوف إعداد الصلوات */
+.adhan-prayer-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    background: rgba(255,255,255,0.05);
+    padding: 5px 8px;
+    border-radius: 6px;
+}
+.adhan-prayer-row .adhan-prayer-name {
+    min-width: 50px;
+    font-weight: bold;
+    color: #fff;
+}
+.adhan-prayer-row select {
+    flex: 1;
+    min-width: 0;
+}
+
 /* Modal الإعدادات */
 .modal { display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.7); z-index: 3000; justify-content: center; align-items: center; }
 .modal-content { background: #222; width: 90%; max-width: 500px; max-height: 85vh; border-radius: 12px; padding: 15px; overflow-y: auto; color: white; }
