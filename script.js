@@ -206,6 +206,18 @@ function applyVisibility(elementId, buttonId, isVisible) {
         btn.innerText = isVisible ? 'إخفاء' : 'إظهار';
         btn.classList.toggle('off', !isVisible);
     }
+    updateTopBarCollapse();
+}
+
+// عند إخفاء الساعة والطقس معاً ينطوي الشريط العلوي لتمتلئ الشاشة بالمحتوى
+function updateTopBarCollapse() {
+    const topBar = document.querySelector('.top-bar-area');
+    if (!topBar) return;
+    const clock = document.getElementById('clockWidget');
+    const weather = document.getElementById('weatherWidget');
+    const clockHidden = clock ? clock.style.display === 'none' : false;
+    const weatherHidden = weather ? weather.style.display === 'none' : false;
+    topBar.classList.toggle('collapsed', clockHidden && weatherHidden);
 }
 
 // إخفاء أزرار التحكم (الإعدادات والقائمة المميزة) في الواجهة الرئيسية عند عدم الحركة
@@ -627,7 +639,12 @@ function updateClock() {
     if (idleTime) idleTime.innerText = timeStr;
     
     const dateEl = document.getElementById('dateDisplay');
-    if (dateEl) dateEl.innerText = now.toLocaleDateString('ar-SA');
+    if (dateEl) {
+        // التاريخ الهجري والميلادي معاً
+        const hijri = now.toLocaleDateString('ar-SA-u-ca-islamic-umalqura', { day: 'numeric', month: 'long', year: 'numeric' });
+        const gregorian = now.toLocaleDateString('en-GB');
+        dateEl.innerText = hijri + ' • ' + gregorian;
+    }
 }
 setInterval(updateClock, 1000);
 updateClock();
