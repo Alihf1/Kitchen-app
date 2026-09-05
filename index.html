@@ -98,6 +98,16 @@
                         <div class="timers-container" id="timersContainer"></div>
                     </div>
 
+                    <!-- مواقيت الأذان -->
+                    <div class="special-section">
+                        <h2><i class="fa-solid fa-mosque"></i> مواقيت الأذان</h2>
+                        <div class="next-adhan-box" id="nextAdhanBox">
+                            <div class="next-adhan-name" id="nextAdhanName">الأذان غير مفعّل</div>
+                            <div class="next-adhan-time" id="nextAdhanTime"></div>
+                            <div class="next-adhan-countdown" id="nextAdhanCountdown"></div>
+                        </div>
+                    </div>
+
                     <!-- مساعد الذكاء الاصطناعي -->
                     <div class="special-section">
                         <h2><i class="fa-solid fa-robot"></i> مساعد الوصفات (AI)</h2>
@@ -211,6 +221,52 @@
                         <input type="text" id="manualCityInput" placeholder="أو أدخل المدینة يدوياً...">
                         <button onclick="setManualCity()">حفظ</button>
                     </div>
+                </div>
+
+                <!-- الأذان -->
+                <div class="setting-group">
+                    <h4><i class="fa-solid fa-mosque"></i> الأذان</h4>
+                    <div class="setting-toggle-row">
+                        <span>تفعيل الأذان</span>
+                        <button class="btn-toggle" id="toggleAdhanBtn" onclick="toggleAdhanEnabled()">تفعيل</button>
+                    </div>
+                    <div class="setting-toggle-row">
+                        <span>نوع التقويم لحساب المواقيت</span>
+                        <select id="adhanMethodSelect" onchange="changeAdhanMethod(this.value)">
+                            <option value="sunni">سني (أم القرى)</option>
+                            <option value="shia">شيعي (الجعفرية)</option>
+                        </select>
+                    </div>
+                    <label style="font-size: 0.85rem; color: #ffd54f;">تُحسب المواقيت تلقائياً من موقع جهازك الحالي</label>
+                    <label style="font-size: 0.85rem; margin-top: 5px;">اختر لكل صلاة: تفعيل/تعطيل الأذان + صوتها الخاص:</label>
+                    <div class="adhan-prayer-row">
+                        <span class="adhan-prayer-name">الفجر</span>
+                        <select id="adhanSoundFajr" onchange="changeAdhanPrayerSound('Fajr', this.value)"></select>
+                        <button class="btn-toggle" id="adhanFajrBtn" onclick="toggleAdhanPrayer('Fajr')">مفعّل</button>
+                    </div>
+                    <div class="adhan-prayer-row">
+                        <span class="adhan-prayer-name">الظهر</span>
+                        <select id="adhanSoundDhuhr" onchange="changeAdhanPrayerSound('Dhuhr', this.value)"></select>
+                        <button class="btn-toggle" id="adhanDhuhrBtn" onclick="toggleAdhanPrayer('Dhuhr')">مفعّل</button>
+                    </div>
+                    <div class="adhan-prayer-row">
+                        <span class="adhan-prayer-name">العصر</span>
+                        <select id="adhanSoundAsr" onchange="changeAdhanPrayerSound('Asr', this.value)"></select>
+                        <button class="btn-toggle" id="adhanAsrBtn" onclick="toggleAdhanPrayer('Asr')">مفعّل</button>
+                    </div>
+                    <div class="adhan-prayer-row">
+                        <span class="adhan-prayer-name">المغرب</span>
+                        <select id="adhanSoundMaghrib" onchange="changeAdhanPrayerSound('Maghrib', this.value)"></select>
+                        <button class="btn-toggle" id="adhanMaghribBtn" onclick="toggleAdhanPrayer('Maghrib')">مفعّل</button>
+                    </div>
+                    <div class="adhan-prayer-row">
+                        <span class="adhan-prayer-name">العشاء</span>
+                        <select id="adhanSoundIsha" onchange="changeAdhanPrayerSound('Isha', this.value)"></select>
+                        <button class="btn-toggle" id="adhanIshaBtn" onclick="toggleAdhanPrayer('Isha')">مفعّل</button>
+                    </div>
+                    <label style="font-size: 0.85rem;">ضع الملفات adhan1.mp3 حتى adhan5.mp3 في مجلد البرنامج، أو ارفع صوتاً خاصاً بك:</label>
+                    <input type="file" id="customAdhanFile" accept="audio/*" onchange="uploadCustomAdhan(event)">
+                    <button class="btn-action-full" onclick="testAdhan()"><i class="fa-solid fa-volume-high"></i> تجربة صوت الأذان</button>
                 </div>
 
                 <!-- الصور المخصصة والذكريات -->
