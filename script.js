@@ -73,11 +73,11 @@ let adhanLastFetchDate = '';
 let adhanTodayTimes = null;
 let adhanTomorrowTimes = null;
 const ADHAN_DEFAULT_SOUNDS = [
-    { id: 'adhan1', name: 'الأذان الأول', url: 'adhan1.mp3' },
-    { id: 'adhan2', name: 'الأذان الثاني', url: 'adhan2.mp3' },
-    { id: 'adhan3', name: 'الأذان الثالث', url: 'adhan3.mp3' },
-    { id: 'adhan4', name: 'الأذان الرابع', url: 'adhan4.mp3' },
-    { id: 'adhan5', name: 'الأذان الخامس', url: 'adhan5.mp3' }
+    { id: 'adhan1', name: 'أباذر الحلواجي', url: 'adhan1.mp3' },
+    { id: 'adhan2', name: 'حسن رضائيان', url: 'adhan2.mp3' },
+    { id: 'adhan3', name: 'حسين شريف', url: 'adhan3.mp3' },
+    { id: 'adhan4', name: 'كاظم زادة', url: 'adhan4.mp3' },
+    { id: 'adhan5', name: 'شبر معلمه (العتبة العلوية)', url: 'adhan5.mp3' }
 ];
 
 let memoryImages = [
