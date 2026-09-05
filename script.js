@@ -52,6 +52,34 @@ let isMainAudioPlaying = false;
 
 let alarmAudioPlayer = new Audio();
 
+// إعدادات الأذان
+let adhanEnabled = false;
+let adhanMethod = 'sunni';
+let adhanCustomSoundUrl = '';
+let adhanPrayers = {
+    Fajr: { enabled: true, sound: 'adhan1' },
+    Dhuhr: { enabled: true, sound: 'adhan1' },
+    Asr: { enabled: true, sound: 'adhan1' },
+    Maghrib: { enabled: true, sound: 'adhan1' },
+    Isha: { enabled: true, sound: 'adhan1' }
+};
+let adhanCountryName = 'Saudi Arabia';
+let currentCity = '';
+let deviceLat = null;
+let deviceLon = null;
+let adhanAudio = new Audio();
+let lastAdhanPlayed = '';
+let adhanLastFetchDate = '';
+let adhanTodayTimes = null;
+let adhanTomorrowTimes = null;
+const ADHAN_DEFAULT_SOUNDS = [
+    { id: 'adhan1', name: 'الأذان الأول', url: 'adhan1.mp3' },
+    { id: 'adhan2', name: 'الأذان الثاني', url: 'adhan2.mp3' },
+    { id: 'adhan3', name: 'الأذان الثالث', url: 'adhan3.mp3' },
+    { id: 'adhan4', name: 'الأذان الرابع', url: 'adhan4.mp3' },
+    { id: 'adhan5', name: 'الأذان الخامس', url: 'adhan5.mp3' }
+];
+
 let memoryImages = [
     'https://images.unsplash.com/photo-1556911220-e15b29be8c8f?w=1200',
     'https://images.unsplash.com/photo-1556910103-1c02745aae4d?w=1200'
@@ -81,6 +109,10 @@ document.addEventListener('DOMContentLoaded', () => {
     setupHoverClose();
     setupAutoHideControls();
     ensureAITokenReady();
+    applyAdhanToggleUI();
+    setInterval(updateAdhanTimesAndCheck, 30000);
+    setInterval(renderNextAdhan, 1000);
+    renderNextAdhan();
 });
 
 function initRealtimeSync() {
@@ -135,8 +167,35 @@ function initRealtimeSync() {
         }
 
         if (settings.city) {
+            currentCity = settings.city;
             getWeatherByCityName(settings.city);
         }
+
+        if (settings.adhanCountry) {
+            adhanCountryName = settings.adhanCountry;
+        }
+        if (settings.adhanEnabled !== undefined) {
+            adhanEnabled = settings.adhanEnabled;
+            applyAdhanToggleUI();
+        }
+        if (settings.adhanMethod) {
+            adhanMethod = settings.adhanMethod;
+            const methodSel = document.getElementById('adhanMethodSelect');
+            if (methodSel) methodSel.value = adhanMethod;
+        }
+        if (settings.adhanCustomSound) {
+            adhanCustomSoundUrl = settings.adhanCustomSound;
+        }
+        if (settings.adhanPrayers && typeof settings.adhanPrayers === 'object') {
+            Object.keys(adhanPrayers).forEach(function (p) {
+                if (settings.adhanPrayers[p]) {
+                    if (settings.adhanPrayers[p].enabled !== undefined) adhanPrayers[p].enabled = settings.adhanPrayers[p].enabled;
+                    if (settings.adhanPrayers[p].sound) adhanPrayers[p].sound = settings.adhanPrayers[p].sound;
+                }
+            });
+        }
+
+        updateAdhanTimesAndCheck();
     });
 
     audioPlayerRef.on('value', (snapshot) => {
@@ -578,7 +637,11 @@ function getLocationGeo() {
     showNotification('جاري تحديد موقعك الحالي...');
     if (navigator.geolocation) {
         navigator.geolocation.getCurrentPosition((pos) => {
-            fetchWeatherByCoords(pos.coords.latitude, pos.coords.longitude, 'موقعك الحالي');
+            deviceLat = pos.coords.latitude;
+            deviceLon = pos.coords.longitude;
+            fetchWeatherByCoords(deviceLat, deviceLon, 'موقعك الحالي');
+            resetAdhanCache();
+            updateAdhanTimesAndCheck();
             showNotification('تم تحديث الطقس بناءً على موقع الجهاز');
         }, () => {
             showNotification('عذراً، متعذر الوصول للموقع. تم اختيار الرياض كافتراضي');
@@ -595,6 +658,8 @@ function setManualCity() {
 }
 
 function setManualCityName(cityName) {
+    currentCity = cityName;
+    updateAdhanTimesAndCheck();
     if (settingsRef) settingsRef.update({ city: cityName });
 }
 
@@ -604,9 +669,19 @@ function getWeatherByCityName(cityName) {
         .then(data => {
             if (data.results && data.results.length > 0) {
                 const { latitude, longitude, name } = data.results[0];
+                deviceLat = latitude;
+                deviceLon = longitude;
                 fetchWeatherByCoords(latitude, longitude, name);
+                resetAdhanCache();
+                updateAdhanTimesAndCheck();
             }
         });
+}
+
+function resetAdhanCache() {
+    adhanTodayTimes = null;
+    adhanTomorrowTimes = null;
+    adhanLastFetchDate = '';
 }
 
 function fetchWeatherByCoords(lat, lon, locationName) {
@@ -1075,3 +1150,276 @@ document.addEventListener("DOMContentLoaded", function () {
   const currentYear = new Date().getFullYear();
   document.getElementById("year").textContent = currentYear;
 });
+
+// ==========================================
+// الأذان: مواقيت شيعية وسنية + أصوات مخصصة
+// ==========================================
+function toggleAdhanEnabled() {
+    adhanEnabled = !adhanEnabled;
+    if (settingsRef) settingsRef.update({ adhanEnabled: adhanEnabled });
+    applyAdhanToggleUI();
+    if (adhanEnabled) {
+        updateAdhanTimesAndCheck();
+    } else {
+        stopAdhan();
+    }
+}
+
+function applyAdhanToggleUI() {
+    const btn = document.getElementById('toggleAdhanBtn');
+    if (btn) {
+        btn.innerText = adhanEnabled ? 'إيقاف' : 'تفعيل';
+        btn.classList.toggle('off', adhanEnabled);
+    }
+    renderAdhanPrayerRows();
+}
+
+// تعبئة صفوف الصلوات: زر التفعيل + قائمة اختيار الصوت لكل صلاة
+function renderAdhanPrayerRows() {
+    ['Fajr', 'Dhuhr', 'Asr', 'Maghrib', 'Isha'].forEach(function (p) {
+        const sel = document.getElementById('adhanSound' + p);
+        if (sel) {
+            sel.innerHTML = '';
+            ADHAN_DEFAULT_SOUNDS.forEach(function (d) {
+                const opt = document.createElement('option');
+                opt.value = d.id;
+                opt.textContent = d.name;
+                sel.appendChild(opt);
+            });
+            const optC = document.createElement('option');
+            optC.value = 'custom';
+            optC.textContent = 'الصوت المخصص';
+            sel.appendChild(optC);
+            sel.value = (adhanPrayers[p] && adhanPrayers[p].sound) || 'adhan1';
+        }
+        const btn = document.getElementById('adhan' + p + 'Btn');
+        if (btn) {
+            const en = adhanPrayers[p] ? adhanPrayers[p].enabled : true;
+            btn.innerText = en ? 'مفعّل' : 'معطّل';
+            btn.classList.toggle('off', !en);
+        }
+    });
+}
+
+function adhanPrayerEnabled(p) {
+    return adhanEnabled && adhanPrayers[p] && adhanPrayers[p].enabled !== false;
+}
+
+function toggleAdhanPrayer(prayer) {
+    if (!adhanPrayers[prayer]) return;
+    adhanPrayers[prayer].enabled = !adhanPrayers[prayer].enabled;
+    if (settingsRef) settingsRef.update({ adhanPrayers: adhanPrayers });
+    renderAdhanPrayerRows();
+    renderNextAdhan();
+}
+
+function changeAdhanPrayerSound(prayer, val) {
+    if (!adhanPrayers[prayer]) return;
+    adhanPrayers[prayer].sound = val;
+    if (settingsRef) settingsRef.update({ adhanPrayers: adhanPrayers });
+}
+
+function uploadCustomAdhan(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = function (e) {
+        adhanCustomSoundUrl = e.target.result;
+        if (settingsRef) settingsRef.update({ adhanCustomSound: adhanCustomSoundUrl });
+        showNotification('تم حفظ الصوت المخصص، اختر «الصوت المخصص» للصلاة المطلوبة');
+    };
+    reader.readAsDataURL(file);
+}
+
+function getSelectedAdhanUrl(soundName) {
+    soundName = soundName || 'adhan1';
+    if (soundName === 'custom' && adhanCustomSoundUrl) return adhanCustomSoundUrl;
+    const found = ADHAN_DEFAULT_SOUNDS.find(function (s) { return s.id === soundName; });
+    return found ? found.url : ADHAN_DEFAULT_SOUNDS[0].url;
+}
+
+function testAdhan() { playAdhan('Fajr'); }
+
+function playAdhan(prayer) {
+    const p = (prayer && adhanPrayers[prayer]) ? adhanPrayers[prayer] : adhanPrayers.Fajr;
+    const url = (p && p.sound) ? getSelectedAdhanUrl(p.sound) : getSelectedAdhanUrl('adhan1');
+    adhanAudio.pause();
+    adhanAudio.currentTime = 0;
+    adhanAudio.src = url;
+    adhanAudio.play().catch(function () {
+        showNotification('تعذر تشغيل الأذان، تأكد من وجود ملف الصوت في المجلد');
+    });
+}
+
+function changeAdhanMethod(val) {
+    adhanMethod = val;
+    resetAdhanCache();
+    if (settingsRef) settingsRef.update({ adhanMethod: val });
+    updateAdhanTimesAndCheck();
+}
+
+function stopAdhan() {
+    adhanAudio.pause();
+    adhanAudio.currentTime = 0;
+}
+
+function updateAdhanTimesAndCheck() {
+    if (!adhanEnabled) return;
+    const today = new Date().toLocaleDateString('en-CA');
+    if (adhanTodayTimes && adhanLastFetchDate === today) {
+        checkAdhanTimes();
+        renderNextAdhan();
+        return;
+    }
+    fetchAdhanTimes();
+}
+
+// المواقيت تُحسب من موقع الجهاز (latitude/longitude) أو من المدينة كخطة بديلة
+function buildAdhanUrl(date) {
+    const method = (adhanMethod === 'shia') ? 0 : 4; // 0=الجعفرية (شيعي)، 4=أم القرى (سني)
+    if (deviceLat && deviceLon) {
+        return 'https://api.aladhan.com/v1/timings/' + date +
+            '?latitude=' + deviceLat +
+            '&longitude=' + deviceLon +
+            '&method=' + method;
+    }
+    const city = currentCity || 'القطيف';
+    return 'https://api.aladhan.com/v1/timingsByCity/' + date +
+        '?city=' + encodeURIComponent(city) +
+        '&country=' + encodeURIComponent(adhanCountryName || 'Saudi Arabia') +
+        '&method=' + method;
+}
+
+function fetchAdhanTimes() {
+    const today = new Date().toLocaleDateString('en-CA');
+    const tomorrow = new Date(Date.now() + 86400000).toLocaleDateString('en-CA');
+    fetch(buildAdhanUrl(today))
+        .then(function (res) { return res.json(); })
+        .then(function (data) {
+            if (data && data.code === 200 && data.data && data.data.timings) {
+                adhanTodayTimes = data.data.timings;
+                adhanLastFetchDate = today;
+                checkAdhanTimes();
+                renderNextAdhan();
+                // نجلب مواقيت الغد حتى يستمر العد التنازلي بعد آخر صلاة اليوم
+                fetch(buildAdhanUrl(tomorrow))
+                    .then(function (r) { return r.json(); })
+                    .then(function (d) {
+                        if (d && d.code === 200 && d.data && d.data.timings) {
+                            adhanTomorrowTimes = d.data.timings;
+                            renderNextAdhan();
+                        }
+                    })
+                    .catch(function () {});
+            }
+        })
+        .catch(function () {});
+}
+
+function checkAdhanTimes() {
+    if (!adhanTodayTimes) return;
+    const now = new Date();
+    const nowMin = now.getHours() * 60 + now.getMinutes();
+    const prayers = ['Fajr', 'Dhuhr', 'Asr', 'Maghrib', 'Isha'];
+    for (let i = 0; i < prayers.length; i++) {
+        if (!adhanPrayerEnabled(prayers[i])) continue;
+        const t = adhanTodayTimes[prayers[i]];
+        if (!t) continue;
+        const parts = t.split(':');
+        const prayerMin = parseInt(parts[0]) * 60 + parseInt(parts[1]);
+        const diff = nowMin - prayerMin;
+        const key = prayers[i] + '_' + adhanLastFetchDate;
+        if (diff >= 0 && diff <= 3 && lastAdhanPlayed !== key) {
+            lastAdhanPlayed = key;
+            playAdhan(prayers[i]);
+            break;
+        }
+    }
+}
+
+// عرض العد التنازلي للصلاة التالية في القائمة المميزة
+function prayerNameAr(key) {
+    const map = { Fajr: 'الفجر', Sunrise: 'الشروق', Dhuhr: 'الظهر', Asr: 'العصر', Maghrib: 'المغرب', Isha: 'العشاء' };
+    return map[key] || key;
+}
+
+function getNextPrayerInfo() {
+    const now = new Date();
+    const nowSec = now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds();
+    const todayDate = new Date().toLocaleDateString('en-CA');
+    const tomorrowDate = new Date(Date.now() + 86400000).toLocaleDateString('en-CA');
+    const sets = [
+        { date: todayDate, times: adhanTodayTimes, label: 'اليوم' },
+        { date: tomorrowDate, times: adhanTomorrowTimes, label: 'غداً' }
+    ];
+    const prayers = ['Fajr', 'Dhuhr', 'Asr', 'Maghrib', 'Isha'];
+    for (let s = 0; s < sets.length; s++) {
+        if (!sets[s].times) continue;
+        for (let i = 0; i < prayers.length; i++) {
+            const t = sets[s].times[prayers[i]];
+            if (!t) continue;
+            if (!adhanPrayerEnabled(prayers[i])) continue;
+            const parts = t.split(':');
+            const prayerSec = parseInt(parts[0]) * 3600 + parseInt(parts[1]) * 60;
+            if (prayerSec > nowSec) {
+                return {
+                    name: prayers[i],
+                    timeStr: t,
+                    secondsLeft: prayerSec - nowSec,
+                    label: sets[s].label
+                };
+            }
+        }
+    }
+    return null;
+}
+
+function renderNextAdhan() {
+    const box = document.getElementById('nextAdhanBox');
+    if (!box) return;
+    const nameEl = document.getElementById('nextAdhanName');
+    const timeEl = document.getElementById('nextAdhanTime');
+    const countEl = document.getElementById('nextAdhanCountdown');
+    if (!nameEl || !timeEl || !countEl) return;
+
+    if (!adhanEnabled) {
+        nameEl.innerText = 'الأذان غير مفعّل';
+        timeEl.innerText = '';
+        countEl.innerText = '';
+        return;
+    }
+    if (!adhanTodayTimes) {
+        nameEl.innerText = 'جاري تحميل المواقيت...';
+        timeEl.innerText = '';
+        countEl.innerText = '';
+        return;
+    }
+
+    let anyEnabled = false;
+    ['Fajr', 'Dhuhr', 'Asr', 'Maghrib', 'Isha'].forEach(function (p) {
+        if (adhanPrayers[p] && adhanPrayers[p].enabled) anyEnabled = true;
+    });
+    if (!anyEnabled) {
+        nameEl.innerText = 'لم تُفعّل أي صلاة للأذان';
+        timeEl.innerText = '';
+        countEl.innerText = '';
+        return;
+    }
+
+    const next = getNextPrayerInfo();
+    if (!next) {
+        nameEl.innerText = 'لا توجد مواقيت متاحة';
+        timeEl.innerText = '';
+        countEl.innerText = '';
+        return;
+    }
+
+    const sec = next.secondsLeft;
+    const hh = String(Math.floor(sec / 3600)).padStart(2, '0');
+    const mm = String(Math.floor((sec % 3600) / 60)).padStart(2, '0');
+    const ss = String(sec % 60).padStart(2, '0');
+
+    nameEl.innerText = 'الأذان التالي: ' + prayerNameAr(next.name) + ' (' + next.label + ')';
+    timeEl.innerText = 'وقت الأذان: ' + next.timeStr;
+    countEl.innerText = 'المتبقي: ' + hh + ':' + mm + ':' + ss;
+}
