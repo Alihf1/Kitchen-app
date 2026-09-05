@@ -67,7 +67,7 @@ let adhanCountryName = 'Saudi Arabia';
 let currentCity = '';
 let deviceLat = null;
 let deviceLon = null;
-let adhanAudio = new Audio();
+let adhanAudio = null;
 let lastAdhanPlayed = '';
 let adhanLastFetchDate = '';
 let adhanTodayTimes = null;
@@ -1249,11 +1249,16 @@ function testAdhan() { playAdhan('Fajr'); }
 function playAdhan(prayer) {
     const p = (prayer && adhanPrayers[prayer]) ? adhanPrayers[prayer] : adhanPrayers.Fajr;
     const url = (p && p.sound) ? getSelectedAdhanUrl(p.sound) : getSelectedAdhanUrl('adhan1');
+    // ننشئ العنصر لحظة التشغيل حتى يعمل على الجوال (iOS يرفض صوتاً أنشئ قبل لمسة المستخدم)
+    if (!adhanAudio) adhanAudio = new Audio();
+    adhanAudio.onerror = function () {
+        showNotification('ملف الصوت غير موجود: ' + url + ' — ضعه في مجلد البرنامج أو اختر الصوت المخصص');
+    };
     adhanAudio.pause();
     adhanAudio.currentTime = 0;
     adhanAudio.src = url;
     adhanAudio.play().catch(function () {
-        showNotification('تعذر تشغيل الأذان، تأكد من وجود ملف الصوت في المجلد');
+        showNotification('تعذر تشغيل الأذان، اضغط مرة أخرى أو تحقق من وجود ملف الصوت');
     });
 }
 
@@ -1265,6 +1270,7 @@ function changeAdhanMethod(val) {
 }
 
 function stopAdhan() {
+    if (!adhanAudio) return;
     adhanAudio.pause();
     adhanAudio.currentTime = 0;
 }
