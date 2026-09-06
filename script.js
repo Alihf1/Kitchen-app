@@ -166,9 +166,13 @@ function initRealtimeSync() {
             renderPlaylistDropdown();
         }
 
-        if (settings.locationMode === 'device') {
-            getLocationGeo();
-        } else if (settings.city) {
+        if (settings.lat && settings.lon) {
+            deviceLat = settings.lat;
+            deviceLon = settings.lon;
+            if (settings.city) currentCity = settings.city;
+            resetAdhanCache();
+            fetchWeatherByCoords(settings.lat, settings.lon, settings.locName || settings.city || 'موقعك الحالي');
+        } else if (settings.locationMode !== 'device' && settings.city) {
             currentCity = settings.city;
             getWeatherByCityName(settings.city);
         }
@@ -232,13 +236,6 @@ function initRealtimeSync() {
         if (!state) return;
         if (state.active) triggerIdleModeUI();
         else wakeUpUI();
-    });
-
-    settingsRef.child('city').once('value', (snap) => {
-        if (snap.val()) return;
-        settingsRef.child('locationMode').once('value', (mode) => {
-            if (!mode.val()) getLocationGeo();
-        });
     });
 }
 
@@ -647,7 +644,12 @@ function getLocationGeo() {
             fetchWeatherByCoords(deviceLat, deviceLon, 'موقعك الحالي');
             resetAdhanCache();
             updateAdhanTimesAndCheck();
-            if (settingsRef) settingsRef.update({ locationMode: 'device' });
+            if (settingsRef) settingsRef.update({
+                locationMode: 'device',
+                lat: deviceLat,
+                lon: deviceLon,
+                locName: 'موقعك الحالي'
+            });
             showNotification('تم تحديث الطقس بناءً على موقع الجهاز');
         }, () => {
             showNotification('عذراً، متعذر الوصول للموقع. تم اختيار الرياض كافتراضي');
@@ -667,6 +669,7 @@ function setManualCityName(cityName) {
     currentCity = cityName;
     updateAdhanTimesAndCheck();
     if (settingsRef) settingsRef.update({ city: cityName, locationMode: 'city' });
+    getWeatherByCityName(cityName);
 }
 
 function getWeatherByCityName(cityName) {
@@ -680,6 +683,12 @@ function getWeatherByCityName(cityName) {
                 fetchWeatherByCoords(latitude, longitude, name);
                 resetAdhanCache();
                 updateAdhanTimesAndCheck();
+                if (settingsRef) settingsRef.update({
+                    locationMode: 'city',
+                    lat: latitude,
+                    lon: longitude,
+                    locName: name
+                });
             }
         });
 }
@@ -760,22 +769,56 @@ function changeSlideshowImage() {
 function uploadLocalMemoryImg(e) {
     var files = e.target.files;
     if (!files || files.length === 0) return;
-    var total = files.length;
-    var loaded = 0;
-    Array.from(files).forEach(function (file) {
-        var reader = new FileReader();
-        reader.onload = function (evt) {
-            memoryImages.push(evt.target.result);
-            loaded++;
-            if (loaded === total) {
-                if (settingsRef) settingsRef.update({ memories: memoryImages });
-                updateMainCustomImage();
-                renderMemoryList();
-                showNotification('تمت إضافة ' + total + ' صورة بنجاح');
-            }
-        };
-        reader.readAsDataURL(file);
-    });
+    var filesArr = Array.from(files);
+    showNotification('جاري معالجة ونشر الصور...');
+    processMemoryFiles(filesArr, 0);
+}
+
+// معالجة الصور واحدة تلو الأخرى حتى لا يثقل الجهاز
+function processMemoryFiles(filesArr, index) {
+    if (index >= filesArr.length) {
+        syncMemoryImages();
+        showNotification('تمت إضافة ' + filesArr.length + ' صورة ونشرها لجميع الأجهزة');
+        return;
+    }
+    var file = filesArr[index];
+    var reader = new FileReader();
+    reader.onload = function (evt) {
+        compressImage(evt.target.result, function (smallUrl) {
+            memoryImages.push(smallUrl);
+            processMemoryFiles(filesArr, index + 1);
+        });
+    };
+    reader.readAsDataURL(file);
+}
+
+// ضغط الصور قبل الحفظ حتى تتزامن بسرعة وموثوقية على كل الأجهزة
+function compressImage(dataUrl, callback) {
+    var img = new Image();
+    img.onload = function () {
+        var maxW = 900;
+        var maxH = 900;
+        var scale = Math.min(1, maxW / img.width, maxH / img.height);
+        var w = Math.round(img.width * scale);
+        var h = Math.round(img.height * scale);
+        var canvas = document.createElement('canvas');
+        canvas.width = w;
+        canvas.height = h;
+        canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+        callback(canvas.toDataURL('image/jpeg', 0.6));
+    };
+    img.onerror = function () { callback(dataUrl); };
+    img.src = dataUrl;
+}
+
+function syncMemoryImages() {
+    updateMainCustomImage();
+    renderMemoryList();
+    if (settingsRef) {
+        settingsRef.update({ memories: memoryImages }).catch(function () {
+            showNotification('تعذر نشر الصور، الصور كبيرة جداً حاول صوراً أصغر');
+        });
+    }
 }
 function renderMemoryList() {
     const list = document.getElementById('memoryImageList');
