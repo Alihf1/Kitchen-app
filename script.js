@@ -21,6 +21,8 @@ const tasksRef = db ? db.ref('tasks') : null;
 const settingsRef = db ? db.ref('settings') : null;
 const audioPlayerRef = db ? db.ref('audioPlayerState') : null;
 const idleModeRef = db ? db.ref('idleModeState') : null;
+const storageRef = (typeof firebase !== 'undefined' && firebase.storage) ? firebase.storage().ref() : null;
+const audioFilesRef = db ? db.ref('audioFiles') : null;
 
 // توافق المتصفحات القديمة (iPad iOS 10): بديل بسيط عن fetch
 if (!window.fetch) {
@@ -212,7 +214,6 @@ function initRealtimeSync() {
             currentAudioIndex = state.currentIndex;
             if (audioPlaylist[currentAudioIndex]) {
                 updateAudioLabel(audioPlaylist[currentAudioIndex].name);
-                mainAudioPlayer.src = audioPlaylist[currentAudioIndex].url;
             }
             renderPlaylistDropdown();
         }
@@ -221,10 +222,7 @@ function initRealtimeSync() {
             isMainAudioPlaying = state.isPlaying;
             updateAudioIcons(isMainAudioPlaying);
             if (isMainAudioPlaying) {
-                if (audioPlaylist[currentAudioIndex] && mainAudioPlayer.src !== audioPlaylist[currentAudioIndex].url) {
-                    mainAudioPlayer.src = audioPlaylist[currentAudioIndex].url;
-                }
-                mainAudioPlayer.play().catch(() => {});
+                setMainAudioSourceByPlaylist(currentAudioIndex, true);
             } else {
                 mainAudioPlayer.pause();
             }
@@ -246,6 +244,17 @@ function showNotification(text) {
         toast.classList.remove('hidden');
         setTimeout(() => { toast.classList.add('hidden'); }, 3000);
     }
+}
+
+// شارة اكتمال التحميل
+function showUploadCompletedBadge() {
+    const badge = document.getElementById('uploadCompleteBadge');
+    if (!badge) return;
+    clearTimeout(badge._t);
+    badge.classList.add('show');
+    badge._t = setTimeout(function () {
+        badge.classList.remove('show');
+    }, 3000);
 }
 
 // التحكم بالإظهار والإخفاء (الساعة والطقس)
@@ -497,22 +506,137 @@ function changeBgColorUI(color) {
 }
 
 // حل مشكلة إضافة وحذف المقاطع الصوتية
+// الأصوات الكبيرة تُقسّم لأجزاء صغيرة وتُحفظ في قاعدة البيانات نفسها (Realtime Database) بدون لمس إعدادات Firebase
+const AUDIO_CHUNK_THRESHOLD = 1500000;
+const AUDIO_CHUNK_MAX_CHARS = 4000000;
+
 function uploadMultipleAudioFiles(event) {
     const files = event.target.files;
     if (!files || files.length === 0) return;
-    let loadedCount = 0;
+    let pending = files.length;
+    let addedCount = 0;
+    const done = function () {
+        pending--;
+        if (pending > 0) return;
+        renderSettingsAudioList();
+        if (currentAudioIndex === -1) currentAudioIndex = 0;
+        if (!settingsRef) {
+            showNotification('تم إضافة الأصوات بنجاح');
+            if (addedCount > 0) showUploadCompletedBadge();
+            return;
+        }
+        settingsRef.update({ playlist: audioPlaylist }).then(function () {
+            showNotification('تم إضافة الأصوات بنجاح');
+            if (addedCount > 0) showUploadCompletedBadge();
+        }).catch(function () {
+            showNotification('تعذرت المزامنة، تحقق من الإنترنت وحاول مجدداً');
+        });
+    };
     Array.from(files).forEach(file => {
+        const isAudio = (file.type && file.type.indexOf('audio/') === 0) || /\.(mp3|wav|m4a|aac|ogg|oga|flac|opus|mp4)$/i.test(file.name);
+        if (!isAudio) {
+            showNotification('الملف «' + file.name + '» غير صوتي ولم يُضف');
+            done();
+            return;
+        }
+        const name = file.name.replace(/\.[^/.]+$/, "");
+        showNotification('جاري تجهيز «' + file.name + '» ...');
         const reader = new FileReader();
+        reader.onerror = function () {
+            showNotification('تعذر قراءة «' + file.name + '»');
+            done();
+        };
         reader.onload = function (e) {
-            audioPlaylist.push({ name: file.name.replace(/\.[^/.]+$/, ""), url: e.target.result });
-            loadedCount++;
-            if (loadedCount === files.length) {
-                if (currentAudioIndex === -1) currentAudioIndex = 0;
-                if (settingsRef) settingsRef.update({ playlist: audioPlaylist });
-                showNotification('تم إضافة الصوت بنجاح');
+            const dataUrl = e.target.result;
+            if (dataUrl.length > AUDIO_CHUNK_THRESHOLD) {
+                const id = 'a' + Date.now() + '_' + Math.random().toString(36).slice(2, 10);
+                audioPlaylist.push({ name: name, url: 'audioFiles/' + id });
+                storeAudioChunks(id, dataUrl, function (ok) {
+                    if (ok) addedCount++;
+                    done();
+                });
+            } else {
+                audioPlaylist.push({ name: name, url: dataUrl });
+                addedCount++;
+                done();
             }
         };
         reader.readAsDataURL(file);
+    });
+}
+
+function storeAudioChunks(id, dataUrl, onDone) {
+    if (!audioFilesRef) { onDone(false); return; }
+    var chunks = [];
+    for (var i = 0; i < dataUrl.length; i += AUDIO_CHUNK_MAX_CHARS) {
+        chunks.push(dataUrl.substring(i, i + AUDIO_CHUNK_MAX_CHARS));
+    }
+    showNotification('جاري رفع الصوت (1/' + chunks.length + ')...');
+    var idx = 0;
+    var next = function () {
+        audioFilesRef.child(id + '/c' + idx).set(chunks[idx], function (err) {
+            if (err) { showNotification('تعذر الرفع، تحقق من الإنترنت'); onDone(false); return; }
+            idx++;
+            if (idx < chunks.length) {
+                showNotification('جاري رفع الصوت (' + (idx + 1) + '/' + chunks.length + ')...');
+                setTimeout(next, 250);
+            } else {
+                audioFilesRef.child(id + '/n').set(chunks.length, function (err2) {
+                    onDone(!err2);
+                });
+            }
+        });
+    };
+    next();
+}
+
+function resolveAudioUrl(url, cb) {
+    if (typeof url !== 'string' || url.indexOf('audioFiles/') !== 0) { cb(url); return; }
+    if (!audioFilesRef) { cb(''); return; }
+    var id = url.slice('audioFiles/'.length);
+    audioFilesRef.child(id + '/n').once('value', function (cntSnap) {
+        var count = cntSnap.val();
+        if (!count) { cb(''); return; }
+        var parts = [];
+        var got = 0;
+        for (var i = 0; i < count; i++) {
+            (function (i) {
+                audioFilesRef.child(id + '/c' + i).once('value', function (snap) {
+                    parts[i] = snap.val() || '';
+                    got++;
+                    if (got === count) cb(parts.join(''));
+                }, function () {
+                    got++;
+                    if (got === count) cb(parts.join(''));
+                });
+            })(i);
+        }
+    }, function () { cb(''); });
+}
+
+var resolvedAudioUrls = {};
+
+function setMainAudioSourceByPlaylist(index, autoplay) {
+    var item = audioPlaylist[index];
+    if (!item) return;
+    if (resolvedAudioUrls[item.url]) {
+        if (mainAudioPlayer.src !== resolvedAudioUrls[item.url]) mainAudioPlayer.src = resolvedAudioUrls[item.url];
+        if (autoplay) mainAudioPlayer.play().catch(function () {});
+        return;
+    }
+    resolveAudioUrl(item.url, function (url) {
+        if (!url) return;
+        resolvedAudioUrls[item.url] = url;
+        mainAudioPlayer.src = url;
+        if (autoplay) mainAudioPlayer.play().catch(function () {});
+    });
+}
+
+function setAlarmAudioURL(url) {
+    resolveAudioUrl(url, function (resolved) {
+        if (!resolved) return;
+        alarmAudioPlayer.src = resolved;
+        alarmAudioPlayer.play().catch(function () {});
     });
 }
 
@@ -528,6 +652,10 @@ function renderSettingsAudioList() {
 }
 
 function deleteAudioItem(index) {
+    var item = audioPlaylist[index];
+    if (item && typeof item.url === 'string' && item.url.indexOf('audioFiles/') === 0 && audioFilesRef) {
+        audioFilesRef.child(item.url.slice('audioFiles/'.length)).remove();
+    }
     audioPlaylist.splice(index, 1);
     if (currentAudioIndex >= audioPlaylist.length) currentAudioIndex = audioPlaylist.length - 1;
     if (settingsRef) settingsRef.update({ playlist: audioPlaylist });
@@ -625,8 +753,7 @@ function startAlarmSound(timerName = 'مؤقت', soundType = 'default_1') {
         modal.style.display = 'flex';
     }
     if (soundType === 'custom' && audioPlaylist.length > 0) {
-        alarmAudioPlayer.src = audioPlaylist[0].url;
-        alarmAudioPlayer.play().catch(() => {});
+        setAlarmAudioURL(audioPlaylist[0].url);
     }
 }
 
