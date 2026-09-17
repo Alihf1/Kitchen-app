@@ -12,6 +12,7 @@
     <!-- مكتبات Firebase -->
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-storage.js"></script>
     <!-- مكتبة الذكاء الاصطناعي المجانية -->
     <script src="https://js.puter.com/v2/"></script>
 </head>
@@ -280,7 +281,7 @@
                 <!-- الصوت المخصص -->
                 <div class="setting-group">
                     <h4><i class="fa-solid fa-radio"></i> تخصيص الصوت والمقاطع</h4>
-                    <input type="file" id="localAudioFiles" accept=".mp3,.wav,.m4a,.aac,.ogg,.oga,.flac,.opus,.mp4,.mov,.m4v,.3gp,.mkv,audio/*,video/*,audio/mp3,audio/mpeg,audio/wav,audio/x-wav,audio/mp4,audio/aac,audio/ogg,audio/flac,video/mp4,video/quicktime" multiple onchange="uploadMultipleAudioFiles(event)">
+                    <input type="file" id="localAudioFiles" accept="audio/*,video/mp4,.mp3,.wav,.m4a,.aac,.ogg,.oga,.flac,.opus,.mp4,.mov,.m4v" multiple onchange="uploadMultipleAudioFiles(event)">
                     <ul id="settingsAudioList" class="settings-list"></ul>
                 </div>
 
@@ -315,6 +316,12 @@
             <div class="idle-time" id="idleTime">12:00</div>
         </div>
     </div>
+<!-- شارة اكتمال التحميل -->
+<div class="upload-complete-badge" id="uploadCompleteBadge">
+    <div class="upload-complete-circle"><i class="fa-solid fa-check"></i></div>
+    <span>اكتمل التحميل بنجاح</span>
+</div>
+
 <!-- شريط حقوق الملكية -->
 <footer class="copyright-footer">
     <img src="logo.png" alt="Technology.Ali" class="copyright-logo">
