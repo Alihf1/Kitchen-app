@@ -334,20 +334,20 @@
 
     /* شريط حقوق الملكية */
     .copyright-footer {
-    position: fixed;
-    bottom: 0;
-    left: 0;
-    width: 100%;
-    background-color: transparent;
-    color: #ffffff;
-    padding: 6px 12px;
-    font-size: 13px;
-    z-index: 1500;
-    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        width: 100%;
+        background-color: transparent;
+        color: #ffffff;
+        padding: 6px 12px;
+        font-size: 13px;
+        z-index: 1500;
+        text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
     }
 
     .copyright-logo {
@@ -355,6 +355,47 @@
     height: 24px;
     object-fit: contain;
     border-radius: 50%;
+    }
+
+    /* شارة اكتمال التحميل */
+    .upload-complete-badge {
+        position: fixed;
+        bottom: 70px;
+        left: 20px;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        background: #2e7d32;
+        color: #fff;
+        padding: 10px 16px;
+        border-radius: 30px;
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.45);
+        z-index: 5000;
+        opacity: 0;
+        transform: translateY(20px) scale(0.8);
+        pointer-events: none;
+        transition: opacity 0.35s ease, transform 0.35s ease;
+    }
+    .upload-complete-badge.show {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+    .upload-complete-circle {
+        width: 34px;
+        height: 34px;
+        border-radius: 50%;
+        background: #fff;
+        color: #2e7d32;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.1rem;
+        animation: badge-pop 0.45s ease;
+    }
+    @keyframes badge-pop {
+        0% { transform: scale(0); }
+        70% { transform: scale(1.25); }
+        100% { transform: scale(1); }
     }
 
     /* اقتراحات الأطباق القابلة للاختيار */
