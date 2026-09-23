@@ -143,6 +143,13 @@
                         <h2><i class="fa-solid fa-images"></i> صور الذكريات</h2>
                         <button class="btn-primary" style="width:100%; margin-top:5px;" onclick="triggerIdleMode()">عرض وضع الشاشة الكاملة</button>
                     </div>
+
+                    <!-- صورة المناسبة الخاصة -->
+                    <div class="special-section">
+                        <h2><i class="fa-solid fa-cake-candles"></i> صورة للمناسبة الخاصة</h2>
+                        <p style="font-size: 0.85rem; color: #ffd54f;">اضغط لعرض صورة المناسبة على الشاشة كاملة</p>
+                        <button class="btn-primary" style="width:100%; margin-top:5px;" onclick="showOccasionFullscreen()">عرض صورة على الشاشة كاملة</button>
+                    </div>
                 </div>
             </div>
         </div>
@@ -278,6 +285,14 @@
                     <ul id="memoryImageList" class="settings-list"></ul>
                 </div>
 
+                <!-- صور المناسبات -->
+                <div class="setting-group">
+                    <h4><i class="fa-solid fa-cake-candles"></i> صور المناسبات</h4>
+                    <label>أضف صور المناسبات الخاصة من جهازك:</label>
+                    <input type="file" id="localOccasionFile" accept="image/*" multiple onchange="uploadLocalOccasionImg(event)">
+                    <ul id="occasionImageList" class="settings-list"></ul>
+                </div>
+
                 <!-- الصوت المخصص -->
                 <div class="setting-group">
                     <h4><i class="fa-solid fa-radio"></i> تخصيص الصوت والمقاطع</h4>
@@ -314,6 +329,13 @@
         <div class="slideshow" id="slideshow"></div>
         <div class="idle-overlay">
             <div class="idle-time" id="idleTime">12:00</div>
+        </div>
+    </div>
+
+    <!-- عرض صورة المناسبة على الشاشة كاملة -->
+    <div class="occasion-fullscreen" id="occasionFullscreen" onclick="closeOccasionFullscreen()">
+        <div class="idle-overlay">
+            <div class="idle-time" id="occasionTime">12:00</div>
         </div>
     </div>
 <!-- شارة اكتمال التحميل -->
