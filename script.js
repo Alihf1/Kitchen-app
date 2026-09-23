@@ -21,6 +21,7 @@ const tasksRef = db ? db.ref('tasks') : null;
 const settingsRef = db ? db.ref('settings') : null;
 const audioPlayerRef = db ? db.ref('audioPlayerState') : null;
 const idleModeRef = db ? db.ref('idleModeState') : null;
+const occasionModeRef = db ? db.ref('occasionModeState') : null;
 const storageRef = (typeof firebase !== 'undefined' && firebase.storage) ? firebase.storage().ref() : null;
 const audioFilesRef = db ? db.ref('audioFiles') : null;
 
@@ -91,6 +92,10 @@ let imageRotationIntervalTime = 10000;
 let imageRotationTimer = null;
 let idleInterval = null;
 
+let occasionImages = [];
+let currentOccasionIndex = 0;
+let occasionSlideshowTimer = null;
+
 let menuGraceTimer = null;
 let menusOpenedAt = 0;
 const OPEN_GUARD_MS = 450;
@@ -160,6 +165,11 @@ function initRealtimeSync() {
             memoryImages = settings.memories;
             renderMemoryList();
             updateMainCustomImage();
+        }
+
+        if (settings.occasions && Array.isArray(settings.occasions)) {
+            occasionImages = settings.occasions;
+            renderOccasionImageList();
         }
 
         if (settings.playlist && Array.isArray(settings.playlist)) {
@@ -234,6 +244,13 @@ function initRealtimeSync() {
         if (!state) return;
         if (state.active) triggerIdleModeUI();
         else wakeUpUI();
+    });
+
+    occasionModeRef.on('value', (snapshot) => {
+        const state = snapshot.val();
+        if (!state) return;
+        if (state.active) triggerOccasionFullscreenUI();
+        else closeOccasionFullscreenUI();
     });
 }
 
@@ -854,6 +871,8 @@ function updateClock() {
     document.getElementById('digitalClock').innerText = timeStr;
     const idleTime = document.getElementById('idleTime');
     if (idleTime) idleTime.innerText = timeStr;
+    const occasionTime = document.getElementById('occasionTime');
+    if (occasionTime) occasionTime.innerText = timeStr;
     
     const dateEl = document.getElementById('dateDisplay');
     if (dateEl) {
@@ -888,7 +907,12 @@ function wakeUpUI() {
 }
 function changeSlideshowImage() {
     const slideshow = document.getElementById('slideshow');
-    if (slideshow && memoryImages.length > 0) {
+    if (!slideshow) return;
+    // صور المناسبات تظهر أولاً في شاشة السكون، وإن لم توجد تعرض صور الذكريات
+    if (occasionImages.length > 0) {
+        slideshow.style.backgroundImage = `url('${occasionImages[currentOccasionIndex]}')`;
+        currentOccasionIndex = (currentOccasionIndex + 1) % occasionImages.length;
+    } else if (memoryImages.length > 0) {
         slideshow.style.backgroundImage = `url('${memoryImages[currentMemoryIndex]}')`;
         currentMemoryIndex = (currentMemoryIndex + 1) % memoryImages.length;
     }
@@ -961,6 +985,121 @@ function deleteMemoryImg(index) {
     memoryImages.splice(index, 1);
     if (settingsRef) settingsRef.update({ memories: memoryImages });
     updateMainCustomImage();
+}
+
+// صور المناسبات الخاصة
+function uploadLocalOccasionImg(e) {
+    var files = e.target.files;
+    if (!files || files.length === 0) return;
+    var filesArr = Array.from(files);
+    showNotification('جاري معالجة صور المناسبات...');
+    processOccasionFiles(filesArr, 0);
+}
+
+// معالجة صور المناسبات واحدة تلو الأخرى
+function processOccasionFiles(filesArr, index) {
+    if (index >= filesArr.length) {
+        syncOccasionImages();
+        showNotification('تمت إضافة ' + filesArr.length + ' صورة مناسبة ونشرها لجميع الأجهزة');
+        return;
+    }
+    var file = filesArr[index];
+    var reader = new FileReader();
+    reader.onload = function (evt) {
+        compressImage(evt.target.result, function (smallUrl) {
+            occasionImages.push(smallUrl);
+            processOccasionFiles(filesArr, index + 1);
+        });
+    };
+    reader.readAsDataURL(file);
+}
+
+function syncOccasionImages() {
+    renderOccasionImageList();
+    if (settingsRef) {
+        settingsRef.update({ occasions: occasionImages }).catch(function () {
+            showNotification('تعذر نشر صور المناسبات، الصور كبيرة جداً حاول صوراً أصغر');
+        });
+    }
+}
+
+function renderOccasionImageList() {
+    const list = document.getElementById('occasionImageList');
+    if (!list) return;
+    list.innerHTML = '';
+    occasionImages.forEach((_, idx) => {
+        const li = document.createElement('li');
+        li.innerHTML = `<span>صورة مناسبة #${idx + 1}</span> <i class="fa-solid fa-trash" onclick="deleteOccasionImg(${idx})" style="color:#ff5252; cursor:pointer;"></i>`;
+        list.appendChild(li);
+    });
+}
+
+function deleteOccasionImg(index) {
+    occasionImages.splice(index, 1);
+    if (settingsRef) settingsRef.update({ occasions: occasionImages });
+    renderOccasionImageList();
+}
+
+// عرض صورة المناسبة على الشاشة كاملة (مزامنة بين جميع الأجهزة)
+function showOccasionFullscreen() {
+    if (occasionImages.length === 0) {
+        showNotification('لم تُضف صور مناسبات بعد، أضفها من الإعدادات → صور المناسبات');
+        return;
+    }
+    if (occasionModeRef) {
+        occasionModeRef.update({ active: true });
+    } else {
+        triggerOccasionFullscreenUI();
+    }
+}
+
+function triggerOccasionFullscreenUI() {
+    const fs = document.getElementById('occasionFullscreen');
+    if (!fs) return;
+    if (occasionImages.length === 0) return;
+    wakeUpUI();
+    if (occasionSlideshowTimer) clearInterval(occasionSlideshowTimer);
+    currentOccasionIndex = 0;
+    updateOccasionSlideshow();
+    if (occasionImages.length > 1) {
+        occasionSlideshowTimer = setInterval(rotateOccasionImage, imageRotationIntervalTime);
+    }
+    fs.style.display = 'block';
+    setTimeout(() => { fs.style.opacity = '1'; }, 10);
+}
+
+function closeOccasionFullscreen() {
+    if (occasionModeRef) {
+        occasionModeRef.update({ active: false });
+    } else {
+        closeOccasionFullscreenUI();
+    }
+}
+
+function closeOccasionFullscreenUI() {
+    const fs = document.getElementById('occasionFullscreen');
+    if (!fs) return;
+    fs.style.opacity = '0';
+    setTimeout(() => { fs.style.display = 'none'; }, 1000);
+    if (occasionSlideshowTimer) {
+        clearInterval(occasionSlideshowTimer);
+        occasionSlideshowTimer = null;
+    }
+}
+
+function rotateOccasionImage() {
+    if (occasionImages.length === 0) return;
+    currentOccasionIndex = (currentOccasionIndex + 1) % occasionImages.length;
+    updateOccasionSlideshow();
+}
+
+function updateOccasionSlideshow() {
+    const fs = document.getElementById('occasionFullscreen');
+    if (!fs) return;
+    if (occasionImages.length > 0) {
+        const imgUrl = occasionImages[currentOccasionIndex % occasionImages.length];
+        fs.style.backgroundImage = `url('${imgUrl}')`;
+    }
 }
 
 // المؤقتات
