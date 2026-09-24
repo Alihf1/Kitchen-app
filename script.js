@@ -21,7 +21,6 @@ const tasksRef = db ? db.ref('tasks') : null;
 const settingsRef = db ? db.ref('settings') : null;
 const audioPlayerRef = db ? db.ref('audioPlayerState') : null;
 const idleModeRef = db ? db.ref('idleModeState') : null;
-const occasionModeRef = db ? db.ref('occasionModeState') : null;
 const storageRef = (typeof firebase !== 'undefined' && firebase.storage) ? firebase.storage().ref() : null;
 const audioFilesRef = db ? db.ref('audioFiles') : null;
 
@@ -94,7 +93,9 @@ let idleInterval = null;
 
 let occasionImages = [];
 let currentOccasionIndex = 0;
-let occasionSlideshowTimer = null;
+
+// تحدد إن كانت شاشة السكون تعرض صور المناسبات أو الصور الخاصة
+let idleSlideshowSource = 'memories';
 
 let menuGraceTimer = null;
 let menusOpenedAt = 0;
@@ -242,15 +243,9 @@ function initRealtimeSync() {
     idleModeRef.on('value', (snapshot) => {
         const state = snapshot.val();
         if (!state) return;
+        idleSlideshowSource = state.source || 'memories';
         if (state.active) triggerIdleModeUI();
         else wakeUpUI();
-    });
-
-    occasionModeRef.on('value', (snapshot) => {
-        const state = snapshot.val();
-        if (!state) return;
-        if (state.active) triggerOccasionFullscreenUI();
-        else closeOccasionFullscreenUI();
     });
 }
 
@@ -871,8 +866,6 @@ function updateClock() {
     document.getElementById('digitalClock').innerText = timeStr;
     const idleTime = document.getElementById('idleTime');
     if (idleTime) idleTime.innerText = timeStr;
-    const occasionTime = document.getElementById('occasionTime');
-    if (occasionTime) occasionTime.innerText = timeStr;
     
     const dateEl = document.getElementById('dateDisplay');
     if (dateEl) {
@@ -887,7 +880,7 @@ updateClock();
 
 // صور الذكريات والخمول
 function triggerIdleMode() {
-    if (idleModeRef) idleModeRef.update({ active: true });
+    if (idleModeRef) idleModeRef.update({ active: true, source: 'memories' });
 }
 function wakeUp() {
     if (idleModeRef) idleModeRef.update({ active: false });
@@ -908,8 +901,8 @@ function wakeUpUI() {
 function changeSlideshowImage() {
     const slideshow = document.getElementById('slideshow');
     if (!slideshow) return;
-    // صور المناسبات تظهر أولاً في شاشة السكون، وإن لم توجد تعرض صور الذكريات
-    if (occasionImages.length > 0) {
+    // عند طلب المناسبة تعرض صور المناسبات، وعند السكون العادي تعرض الصور الخاصة
+    if (idleSlideshowSource === 'occasion' && occasionImages.length > 0) {
         slideshow.style.backgroundImage = `url('${occasionImages[currentOccasionIndex]}')`;
         currentOccasionIndex = (currentOccasionIndex + 1) % occasionImages.length;
     } else if (memoryImages.length > 0) {
@@ -1040,65 +1033,17 @@ function deleteOccasionImg(index) {
     renderOccasionImageList();
 }
 
-// عرض صورة المناسبة على الشاشة كاملة (مزامنة بين جميع الأجهزة)
+// عرض صورة المناسبة عبر شاشة السكون نفسها (مزامنة بين جميع الأجهزة)
 function showOccasionFullscreen() {
     if (occasionImages.length === 0) {
         showNotification('لم تُضف صور مناسبات بعد، أضفها من الإعدادات → صور المناسبات');
         return;
     }
-    if (occasionModeRef) {
-        occasionModeRef.update({ active: true });
+    if (idleModeRef) {
+        idleModeRef.update({ active: true, source: 'occasion' });
     } else {
-        triggerOccasionFullscreenUI();
-    }
-}
-
-function triggerOccasionFullscreenUI() {
-    const fs = document.getElementById('occasionFullscreen');
-    if (!fs) return;
-    if (occasionImages.length === 0) return;
-    wakeUpUI();
-    if (occasionSlideshowTimer) clearInterval(occasionSlideshowTimer);
-    currentOccasionIndex = 0;
-    updateOccasionSlideshow();
-    if (occasionImages.length > 1) {
-        occasionSlideshowTimer = setInterval(rotateOccasionImage, imageRotationIntervalTime);
-    }
-    fs.style.display = 'block';
-    setTimeout(() => { fs.style.opacity = '1'; }, 10);
-}
-
-function closeOccasionFullscreen() {
-    if (occasionModeRef) {
-        occasionModeRef.update({ active: false });
-    } else {
-        closeOccasionFullscreenUI();
-    }
-}
-
-function closeOccasionFullscreenUI() {
-    const fs = document.getElementById('occasionFullscreen');
-    if (!fs) return;
-    fs.style.opacity = '0';
-    setTimeout(() => { fs.style.display = 'none'; }, 1000);
-    if (occasionSlideshowTimer) {
-        clearInterval(occasionSlideshowTimer);
-        occasionSlideshowTimer = null;
-    }
-}
-
-function rotateOccasionImage() {
-    if (occasionImages.length === 0) return;
-    currentOccasionIndex = (currentOccasionIndex + 1) % occasionImages.length;
-    updateOccasionSlideshow();
-}
-
-function updateOccasionSlideshow() {
-    const fs = document.getElementById('occasionFullscreen');
-    if (!fs) return;
-    if (occasionImages.length > 0) {
-        const imgUrl = occasionImages[currentOccasionIndex % occasionImages.length];
-        fs.style.backgroundImage = `url('${imgUrl}')`;
+        idleSlideshowSource = 'occasion';
+        triggerIdleModeUI();
     }
 }
 
