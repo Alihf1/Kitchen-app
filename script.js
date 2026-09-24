@@ -94,6 +94,13 @@ let idleInterval = null;
 let occasionImages = [];
 let currentOccasionIndex = 0;
 
+// صور الأذان: تتعرض تلقائياً عند دخول وقت الأذان
+let adhanImages = [];
+let currentAdhanImageIndex = 0;
+let adhanImageChangeEnabled = true;
+let adhanImageActive = false;
+let adhanImageSafetyTimer = null;
+
 // تحدد إن كانت شاشة السكون تعرض صور المناسبات أو الصور الخاصة
 let idleSlideshowSource = 'memories';
 
@@ -118,8 +125,10 @@ document.addEventListener('DOMContentLoaded', () => {
     setupAutoHideControls();
     ensureAITokenReady();
     applyAdhanToggleUI();
+    applyAdhanImageToggleUI();
     setInterval(updateAdhanTimesAndCheck, 30000);
     setInterval(renderNextAdhan, 1000);
+    setInterval(checkAdhanImageTrigger, 1000);
     renderNextAdhan();
 });
 
@@ -171,6 +180,16 @@ function initRealtimeSync() {
         if (settings.occasions && Array.isArray(settings.occasions)) {
             occasionImages = settings.occasions;
             renderOccasionImageList();
+        }
+
+        if (settings.adhanImages && Array.isArray(settings.adhanImages)) {
+            adhanImages = settings.adhanImages;
+            renderAdhanImageList();
+        }
+        if (settings.adhanImageChangeEnabled !== undefined) {
+            adhanImageChangeEnabled = settings.adhanImageChangeEnabled;
+            applyAdhanImageToggleUI();
+            if (!adhanImageChangeEnabled) deactivateAdhanImages();
         }
 
         if (settings.playlist && Array.isArray(settings.playlist)) {
@@ -472,6 +491,11 @@ function startImageRotation() {
 }
 
 function rotateMainCustomImage() {
+    if (adhanImageActive && adhanImages.length > 0) {
+        currentAdhanImageIndex = (currentAdhanImageIndex + 1) % adhanImages.length;
+        updateMainCustomImage();
+        return;
+    }
     if (memoryImages.length > 0) {
         currentMemoryIndex = (currentMemoryIndex + 1) % memoryImages.length;
         updateMainCustomImage();
@@ -481,8 +505,14 @@ function rotateMainCustomImage() {
 function updateMainCustomImage() {
     const container = document.getElementById('mainCustomImageView');
     if (!container) return;
-    if (memoryImages.length > 0) {
-        const imgUrl = memoryImages[currentMemoryIndex % memoryImages.length];
+    let images = memoryImages;
+    let index = currentMemoryIndex;
+    if (adhanImageActive && adhanImages.length > 0) {
+        images = adhanImages;
+        index = currentAdhanImageIndex;
+    }
+    if (images.length > 0) {
+        const imgUrl = images[index % images.length];
         container.style.backgroundImage = `url('${imgUrl}')`;
         container.style.backgroundSize = 'cover';
         container.style.backgroundPosition = 'center';
@@ -901,8 +931,11 @@ function wakeUpUI() {
 function changeSlideshowImage() {
     const slideshow = document.getElementById('slideshow');
     if (!slideshow) return;
-    // عند طلب المناسبة تعرض صور المناسبات، وعند السكون العادي تعرض الصور الخاصة
-    if (idleSlideshowSource === 'occasion' && occasionImages.length > 0) {
+    // أثناء الأذان تعرض صور الأذان أولاً
+    if (adhanImageActive && adhanImages.length > 0) {
+        slideshow.style.backgroundImage = `url('${adhanImages[currentAdhanImageIndex]}')`;
+        currentAdhanImageIndex = (currentAdhanImageIndex + 1) % adhanImages.length;
+    } else if (idleSlideshowSource === 'occasion' && occasionImages.length > 0) {
         slideshow.style.backgroundImage = `url('${occasionImages[currentOccasionIndex]}')`;
         currentOccasionIndex = (currentOccasionIndex + 1) % occasionImages.length;
     } else if (memoryImages.length > 0) {
@@ -1045,6 +1078,106 @@ function showOccasionFullscreen() {
         idleSlideshowSource = 'occasion';
         triggerIdleModeUI();
     }
+}
+
+// صور الأذان: رفع وتفويض وضغط
+function uploadLocalAdhanImg(e) {
+    var files = e.target.files;
+    if (!files || files.length === 0) return;
+    var filesArr = Array.from(files);
+    showNotification('جاري معالجة صور الأذان...');
+    processAdhanFiles(filesArr, 0);
+}
+
+function processAdhanFiles(filesArr, index) {
+    if (index >= filesArr.length) {
+        syncAdhanImages();
+        showNotification('تمت إضافة ' + filesArr.length + ' صورة أذان ونشرها لجميع الأجهزة');
+        return;
+    }
+    var file = filesArr[index];
+    var reader = new FileReader();
+    reader.onload = function (evt) {
+        compressImage(evt.target.result, function (smallUrl) {
+            adhanImages.push(smallUrl);
+            processAdhanFiles(filesArr, index + 1);
+        });
+    };
+    reader.readAsDataURL(file);
+}
+
+function syncAdhanImages() {
+    renderAdhanImageList();
+    if (settingsRef) {
+        settingsRef.update({ adhanImages: adhanImages }).catch(function () {
+            showNotification('تعذر نشر صور الأذان، الصور كبيرة جداً حاول صوراً أصغر');
+        });
+    }
+}
+
+function renderAdhanImageList() {
+    const list = document.getElementById('adhanImageList');
+    if (!list) return;
+    list.innerHTML = '';
+    adhanImages.forEach((_, idx) => {
+        const li = document.createElement('li');
+        li.innerHTML = `<span>صورة أذان #${idx + 1}</span> <i class="fa-solid fa-trash" onclick="deleteAdhanImg(${idx})" style="color:#ff5252; cursor:pointer;"></i>`;
+        list.appendChild(li);
+    });
+}
+
+function deleteAdhanImg(index) {
+    adhanImages.splice(index, 1);
+    if (settingsRef) settingsRef.update({ adhanImages: adhanImages });
+    renderAdhanImageList();
+}
+
+// تشغيل/إيقاف ميزة تغيير الصورة أثناء الأذان
+function toggleAdhanImageChange() {
+    adhanImageChangeEnabled = !adhanImageChangeEnabled;
+    if (settingsRef) settingsRef.update({ adhanImageChangeEnabled: adhanImageChangeEnabled });
+    applyAdhanImageToggleUI();
+    if (!adhanImageChangeEnabled) deactivateAdhanImages();
+}
+
+function applyAdhanImageToggleUI() {
+    const btn = document.getElementById('adhanImageToggleBtn');
+    if (!btn) return;
+    btn.innerText = adhanImageChangeEnabled ? 'إيقاف' : 'تشغيل';
+    btn.classList.toggle('off', !adhanImageChangeEnabled);
+}
+
+// تفعيل صور الأذان عند دخول الوقت (أو قبله بثانية)
+function activateAdhanImages() {
+    if (!adhanImageChangeEnabled || adhanImages.length === 0) return;
+    if (adhanImageActive) return;
+    adhanImageActive = true;
+    currentAdhanImageIndex = 0;
+    updateMainCustomImage();
+    changeSlideshowImage();
+    if (adhanImageSafetyTimer) clearTimeout(adhanImageSafetyTimer);
+    adhanImageSafetyTimer = setTimeout(deactivateAdhanImages, 10 * 60 * 1000);
+}
+
+function deactivateAdhanImages() {
+    if (!adhanImageActive) return;
+    adhanImageActive = false;
+    if (adhanImageSafetyTimer) {
+        clearTimeout(adhanImageSafetyTimer);
+        adhanImageSafetyTimer = null;
+    }
+    updateMainCustomImage();
+    changeSlideshowImage();
+}
+
+function checkAdhanImageTrigger() {
+    if (!adhanEnabled || !adhanImageChangeEnabled) return;
+    if (adhanImageActive) return;
+    if (adhanImages.length === 0) return;
+    const next = getNextPrayerInfo();
+    if (!next) return;
+    // قبل الأذان بثانية واحدة
+    if (next.secondsLeft <= 1) activateAdhanImages();
 }
 
 // المؤقتات
@@ -1310,7 +1443,16 @@ function extractAIText(res) {
 
 let lastSuggestedIngredients = '';
 
-// الخطوة 1: اقتراح أسماء أطباق حسب المكونات
+// كلمات أطباق شهيرة: إذا كتبها المستخدم فهي طلب لتحضير الطبق نفسه وليست مكونات
+const DISH_REQUEST_WORDS = ['شورما','شاورما','كبسة','مندي','مقلوبة','برياني','معصوب','مطبق','فول','تميس','بيتزا','برجر','كنافة','بقلاوة','لقيمات','معمول','خبز','عصيدة','هريس','جريش','مصابيب','ممرز','سمبوسة','سمبوسك','مظلوم','قطايف'];
+function isDishRequest(input) {
+    if (!input) return false;
+    return DISH_REQUEST_WORDS.some(function (w) {
+        return input.indexOf(w) !== -1;
+    });
+}
+
+// الخطوة 1: اقتراح أسماء أطباق حسب المكونات، أو طرق تحضير الطبق إذا كان طلب طبقاً
 function suggestDishes() {
     const input = document.getElementById('ingredientsInput');
     const output = document.getElementById('recipeOutput');
@@ -1323,18 +1465,24 @@ function suggestDishes() {
     }
 
     lastSuggestedIngredients = ingredients;
-    output.innerText = 'جاري اقتراح الأطباق المناسبة لمكوناتك...';
+    output.innerText = 'جاري اقتراح الأطباق المناسبة...';
     if (box) box.classList.add('hidden');
 
-    callAI(
-        'أنت طاهٍ محترف. المستخدم يملك هذه المكونات: ' + ingredients + '\n' +
-        'اقترح له 5 أطباق شهية يمكن تحضيرها بها (مثال: مكرونة حمراء، كبسة دجاج، رز مندي). ' +
-        'اكتب أسماء الأطباق فقط، كل اسم في سطر منفصل، بدون أرقام أو رموز أو أي شرح إضافي.'
-    ).then((raw) => {
+    const dishReq = isDishRequest(ingredients);
+    const ask = dishReq
+        ? 'أنت طاهٍ محترف. المستخدم يريد تحضير طبق «' + ingredients + '» نفسه وليس إضافته لأطباق أخرى.\n' +
+          'اقترح له 5 طرق حقيقية لتحضيره (مثل: في الفرن، في المقلاة، أو بمقادير/تتبيلات مختلفة).\n' +
+          'اكتب اسم كل طريقة في سطر منفصل فقط، بدون أرقام أو رموز أو أي شرح إضافي.'
+        : 'أنت طاهٍ محترف. المستخدم يملك هذه المكونات في ثلاجته: ' + ingredients + '\n' +
+          'اقترح له 5 أطباق حقيقية تُحضَّر فعلاً من هذه المكونات كمكوّن أساسي، ' +
+          'ولا تخترع أطباقاً غريبة أو غير واقعية (مثل وضع العسل في المكرونة، أو شورما في المكرونة).\n' +
+          'اكتب أسماء الأطباق فقط، كل اسم في سطر منفصل، بدون أرقام أو رموز أو أي شرح إضافي.';
+
+    callAI(ask).then((raw) => {
         const dishes = parseDishNames(raw);
         if (!dishes.length) throw new Error('empty');
         renderDishSuggestions(dishes);
-        output.innerText = 'اختر طبقاً من الاقتراحات لعرض وصفته كاملة:';
+        output.innerText = dishReq ? 'اختر طريقة تحضير لعرض خطواتها كاملة:' : 'اختر طبقاً من الاقتراحات لعرض وصفتها كاملة:';
     }).catch(() => {
         output.innerText = 'خدمة الذكاء الاصطناعي غير متاحة على هذا الجهاز، تأكد من الاتصال بالإنترنت وحاول مجدداً.';
     });
@@ -1373,8 +1521,9 @@ function selectDish(dishName, chipEl) {
     output.innerText = 'جاري تجهيز وصفة «' + dishName + '» ...';
 
     callAI(
-        'أنت طاهٍ محترف. اكتب بالعربية وصفة عملية مفصلة للطبق التالي: «' + dishName + '»\n' +
+        'أنت طاهٍ محترف. اكتب بالعربية وصفة عملية مفصلة لتحضير الطبق التالي: «' + dishName + '»\n' +
         'مع مراعاة أن المستخدم يملك هذه المكونات: ' + (lastSuggestedIngredients || 'غير محددة') + '\n' +
+        (isDishRequest(lastSuggestedIngredients) ? 'قدّم أكثر من طريقة تحضير (فرن/مقلاة/مقادير بديلة) مع خطوات واضحة لكل طريقة.\n' : '') +
         'الصيغة: اسم الطبق، وقت التحضير، المقادير كاملة، ثم خطوات التحضير مرقمة وباختصار.'
     ).then((recipe) => {
         output.innerText = recipe || 'تعذر الحصول على الوصفة، حاول مجدداً.';
@@ -1386,6 +1535,7 @@ function selectDish(dishName, chipEl) {
 function showSubstitutes() {
     const input = document.getElementById('ingredientsInput');
     const output = document.getElementById('recipeOutput');
+    const box = document.getElementById('dishSuggestions');
     const ingredients = input ? input.value.trim() : '';
 
     if (!ingredients) {
@@ -1396,15 +1546,36 @@ function showSubstitutes() {
     lastSuggestedIngredients = ingredients;
     output.innerText = 'جاري البحث عن البدائل...';
 
-    callAI(
-        'أنت طاهٍ محترف. لدي هذه المكونات: ' + ingredients + '\n' +
-        'اكتب بالعربية وباختصار: بدائل منزلية شائعة لأهم المكونات الناقصة في الوصفات، ' +
-        'ثم اقترح 3 أطباق سريعة يمكن تحضيرها بهذه المكونات.'
-    ).then((subs) => {
-        output.innerText = subs || 'تعذر الحصول على البدائل، حاول مجدداً.';
-    }).catch(() => {
-        output.innerText = 'خدمة الذكاء الاصطناعي غير متاحة على هذا الجهاز، تأكد من الاتصال بالإنترنت وحاول مجدداً.';
-    });
+    const selectedChip = document.querySelector('.dish-chip.selected');
+
+    if (selectedChip) {
+        // يوجد طبق مختار → بدائل مكونات لهذا الطبق تحديداً
+        const dishName = selectedChip.innerText;
+        callAI(
+            'أنت طاهٍ محترف. المستخدم يريد تحضير طبق «' + dishName + '» ومعه هذه المكونات: ' + ingredients + '\n' +
+            'اكتب بالعربية وباختصار: بدائل منزلية شائعة لأي مكوّن ناقص في هذا الطبق بالذات، ' +
+            'مع ذكر البديل المناسب لكل مكوّن وصيغة: البديل ← بديله.'
+        ).then((subs) => {
+            output.innerText = subs || 'تعذر الحصول على البدائل، حاول مجدداً.';
+        }).catch(() => {
+            output.innerText = 'خدمة الذكاء الاصطناعي غير متاحة على هذا الجهاز، تأكد من الاتصال بالإنترنت وحاول مجدداً.';
+        });
+    } else {
+        // لا يوجد طبق مختار → استبدال الأطباق المقترحة بأطباق مختلفة
+        callAI(
+            'أنت طاهٍ محترف. المستخدم يملك هذه المكونات في ثلاجته: ' + ingredients + '\n' +
+            'اقترح له 5 أطباق بديلة مختلفة تماماً عما يقترحه الناس عادة، وكلها أطباق حقيقية تُحضَّر فعلاً من هذه المكونات كمكوّن أساسي، ' +
+            'ولا تخترع أطباقاً غريبة مثل وضع العسل في المكرونة.\n' +
+            'اكتب أسماء الأطباق فقط، كل اسم في سطر منفصل، بدون أرقام أو رموز أو أي شرح إضافي.'
+        ).then((raw) => {
+            const dishes = parseDishNames(raw);
+            if (!dishes.length) throw new Error('empty');
+            renderDishSuggestions(dishes);
+            output.innerText = 'هذه أطباق بديلة مختلفة، اختر منها لعرض وصفتها:';
+        }).catch(() => {
+            output.innerText = 'خدمة الذكاء الاصطناعي غير متاحة على هذا الجهاز، تأكد من الاتصال بالإنترنت وحاول مجدداً.';
+        });
+    }
 }
 document.addEventListener("DOMContentLoaded", function () {
   const currentYear = new Date().getFullYear();
@@ -1501,18 +1672,22 @@ function getSelectedAdhanUrl(soundName) {
 function testAdhan() { playAdhan('Fajr'); }
 
 function playAdhan(prayer) {
+    activateAdhanImages();
     const p = (prayer && adhanPrayers[prayer]) ? adhanPrayers[prayer] : adhanPrayers.Fajr;
     const url = (p && p.sound) ? getSelectedAdhanUrl(p.sound) : getSelectedAdhanUrl('adhan1');
     // ننشئ العنصر لحظة التشغيل حتى يعمل على الجوال (iOS يرفض صوتاً أنشئ قبل لمسة المستخدم)
     if (!adhanAudio) adhanAudio = new Audio();
+    adhanAudio.onended = function () { deactivateAdhanImages(); };
     adhanAudio.onerror = function () {
         showNotification('ملف الصوت غير موجود: ' + url + ' — ضعه في مجلد البرنامج أو اختر الصوت المخصص');
+        deactivateAdhanImages();
     };
     adhanAudio.pause();
     adhanAudio.currentTime = 0;
     adhanAudio.src = url;
     adhanAudio.play().catch(function () {
         showNotification('تعذر تشغيل الأذان، اضغط مرة أخرى أو تحقق من وجود ملف الصوت');
+        deactivateAdhanImages();
     });
 }
 
@@ -1527,6 +1702,7 @@ function stopAdhan() {
     if (!adhanAudio) return;
     adhanAudio.pause();
     adhanAudio.currentTime = 0;
+    deactivateAdhanImages();
 }
 
 function updateAdhanTimesAndCheck() {
