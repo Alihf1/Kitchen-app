@@ -332,23 +332,6 @@
     .idle-time { font-size: 4rem; font-weight: bold; }
     .settings-toast.hidden { display: none; }
 
-    /* عرض صورة المناسبة على الشاشة كاملة (مثل شاشة السكون) */
-    .occasion-fullscreen {
-        position: fixed;
-        top: 0;
-        left: 0;
-        width: 100vw;
-        height: 100vh;
-        background: #000 no-repeat center center;
-        background-size: cover;
-        background-position: center;
-        z-index: 4000;
-        display: none;
-        opacity: 0;
-        transition: opacity 1s ease;
-        cursor: pointer;
-    }
-
     /* شريط حقوق الملكية */
     .copyright-footer {
         position: fixed;
