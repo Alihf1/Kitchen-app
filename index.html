@@ -293,6 +293,18 @@
                     <ul id="occasionImageList" class="settings-list"></ul>
                 </div>
 
+                <!-- صور الأذان -->
+                <div class="setting-group">
+                    <h4><i class="fa-solid fa-mosque"></i> صور الأذان</h4>
+                    <div class="setting-toggle-row">
+                        <span>تغيير الصورة أثناء الأذان</span>
+                        <button class="btn-toggle" id="adhanImageToggleBtn" onclick="toggleAdhanImageChange()">إيقاف</button>
+                    </div>
+                    <label style="font-size: 0.85rem; color: #ffd54f;">عند دخول وقت الأذان تُعرض هذه الصور تلقائياً على الشاشة، وتعود للصور العادية بعد انتهاء الأذان</label>
+                    <input type="file" id="localAdhanFile" accept="image/*" multiple onchange="uploadLocalAdhanImg(event)">
+                    <ul id="adhanImageList" class="settings-list"></ul>
+                </div>
+
                 <!-- الصوت المخصص -->
                 <div class="setting-group">
                     <h4><i class="fa-solid fa-radio"></i> تخصيص الصوت والمقاطع</h4>
