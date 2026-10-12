@@ -1,0 +1,30 @@
+{
+    "name": "شاشة المطبخ الذكية",
+    "short_name": "المطبخ",
+    "description": "شاشة المطبخ الذكية - Technology.Ali",
+    "start_url": "./index.html",
+    "display": "standalone",
+    "background_color": "#000000",
+    "theme_color": "#ff9800",
+    "orientation": "portrait",
+    "icons": [
+        {
+            "src": "TECHNOLOGY.ALI.jpg",
+            "sizes": "180x180",
+            "type": "image/jpeg",
+            "purpose": "any"
+        },
+        {
+            "src": "TECHNOLOGY.ALI.jpg",
+            "sizes": "192x192",
+            "type": "image/jpeg",
+            "purpose": "any"
+        },
+        {
+            "src": "TECHNOLOGY.ALI.jpg",
+            "sizes": "512x512",
+            "type": "image/jpeg",
+            "purpose": "any"
+        }
+    ]
+}

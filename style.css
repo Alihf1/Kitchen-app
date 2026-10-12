@@ -332,23 +332,6 @@
     .idle-time { font-size: 4rem; font-weight: bold; }
     .settings-toast.hidden { display: none; }
 
-    /* شريط حقوق الملكية */
-    .copyright-footer {
-        position: fixed;
-        bottom: 0;
-        left: 0;
-        width: 100%;
-        background-color: transparent;
-        color: #ffffff;
-        padding: 6px 12px;
-        font-size: 13px;
-        z-index: 1500;
-        text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        gap: 8px;
-    }
 
     .copyright-logo {
     width: 24px;
@@ -498,3 +481,19 @@
         .idle-time { font-size: 3rem; }
         .copyright-footer { font-size: 11px; }
     }
+/* حقوق الملكية في أسفل الصفحة */
+.ali-table-footer {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    text-align: center;
+    padding: 8px 0;
+    background-color: transparent;
+    color: #ffffff;
+    font-family: sans-serif;
+    font-size: 0.9rem;
+    z-index: 1500;
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
+    pointer-events: none;
+}
